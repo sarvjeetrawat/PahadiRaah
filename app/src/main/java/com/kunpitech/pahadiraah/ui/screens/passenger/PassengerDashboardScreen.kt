@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,85 +29,45 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kunpitech.pahadiraah.data.model.RouteDto
+import com.kunpitech.pahadiraah.data.model.UiState
+import com.kunpitech.pahadiraah.data.model.UserDto
 import com.kunpitech.pahadiraah.ui.theme.*
+import com.kunpitech.pahadiraah.viewmodel.RouteViewModel
+import com.kunpitech.pahadiraah.viewmodel.UserViewModel
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  LOCAL DATA MODELS
-// ─────────────────────────────────────────────────────────────────────────────
-
-data class PopularRoute(
-    val emoji: String,
-    val origin: String,
-    val destination: String,
-    val duration: String,
-    val startingFare: String
-)
-
-data class FeaturedDriver(
-    val name: String,
-    val emoji: String,
-    val rating: Float,
-    val trips: Int,
-    val vehicle: String,
-    val nextRoute: String,
-    val fare: String,
-    val seatsLeft: Int
-)
-
-data class NearbyTrip(
-    val id: String,
-    val emoji: String,
-    val origin: String,
-    val destination: String,
-    val date: String,
-    val time: String,
-    val driverName: String,
-    val driverEmoji: String,
-    val fare: String,
-    val seatsLeft: Int,
-    val rating: Float
-)
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SCREEN
+//  PassengerDashboardScreen  — fully dynamic
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun PassengerDashboardScreen(
-    onSearchRoutes: () -> Unit,
+    onSearchRoutes:  () -> Unit,
     onBrowseDrivers: () -> Unit,
-    onMyBookings: () -> Unit,
-    onBack: () -> Unit
+    onMyBookings:    () -> Unit,
+    onProfile:       () -> Unit,
+    onBack:          () -> Unit,
+    userViewModel:  UserViewModel  = hiltViewModel(),
+    routeViewModel: RouteViewModel = hiltViewModel()
 ) {
-    // ── Sample data ───────────────────────────────────────────────────────────
-    val popularRoutes = remember {
-        listOf(
-            PopularRoute("🏔️", "Shimla",      "Manali",       "6–7 hrs",  "₹750"),
-            PopularRoute("🌄", "Dehradun",    "Mussoorie",    "1.5 hrs",  "₹280"),
-            PopularRoute("⛰️", "Nainital",    "Bhimtal",      "45 min",   "₹180"),
-            PopularRoute("🗻", "Dharamshala", "Spiti Valley", "8–9 hrs",  "₹1,100"),
-            PopularRoute("🌲", "Rishikesh",   "Chopta",       "4 hrs",    "₹500"),
-        )
+    val profileState    by userViewModel.myProfile.collectAsStateWithLifecycle()
+    val allDriversState by userViewModel.allDrivers.collectAsStateWithLifecycle()
+    val searchState     by routeViewModel.searchState.collectAsStateWithLifecycle()
+
+    // Load data on entry — empty search = all upcoming routes
+    LaunchedEffect(Unit) {
+        userViewModel.loadMyProfile()
+        userViewModel.loadAllDrivers()
+        routeViewModel.searchRoutes("", "", 1)
     }
 
-    val featuredDrivers = remember {
-        listOf(
-            FeaturedDriver("Ramesh Kumar", "🧔", 4.9f, 134, "SUV / Jeep",  "Shimla → Manali",    "₹850", 2),
-            FeaturedDriver("Sita Devi",    "👩", 4.7f, 89,  "Tempo",       "Dehradun → Musso.",  "₹300", 4),
-            FeaturedDriver("Dev Singh",    "👨", 4.8f, 212, "SUV / Jeep",  "Nainital → Bhimtal", "₹420", 1),
-        )
-    }
+    val profile  = (profileState as? UiState.Success<UserDto>)?.data
+    val drivers  = (allDriversState as? UiState.Success<List<UserDto>>)?.data ?: emptyList()
+    val routes   = (searchState as? UiState.Success<List<RouteDto>>)?.data ?: emptyList()
 
-    val nearbyTrips = remember {
-        listOf(
-            NearbyTrip("1","🏔️","Shimla","Manali",      "Jun 22","6:00 AM","Ramesh Kumar","🧔","₹850",  2,4.9f),
-            NearbyTrip("2","🌄","Dehradun","Mussoorie",  "Jun 22","8:30 AM","Sita Devi",   "👩","₹300",  4,4.7f),
-            NearbyTrip("3","🌲","Rishikesh","Chopta",    "Jun 23","7:00 AM","Dev Singh",   "👨","₹550",  3,4.8f),
-            NearbyTrip("4","🗻","Dharamshala","Spiti",   "Jun 25","5:00 AM","Arjun Mehta", "👨","₹1,200",1,4.6f),
-        )
-    }
-
-    // ── Entrance animations ───────────────────────────────────────────────────
+    // Entrance animation
     var started by remember { mutableStateOf(false) }
     val headerAlpha   by animateFloatAsState(if (started) 1f else 0f, tween(500), label = "ha")
     val headerOffset  by animateFloatAsState(if (started) 0f else -28f, tween(600, easing = EaseOutCubic), label = "hY")
@@ -118,20 +77,19 @@ fun PassengerDashboardScreen(
     val contentOffset by animateFloatAsState(if (started) 0f else 36f, tween(700, delayMillis = 300, easing = EaseOutCubic), label = "cY")
     LaunchedEffect(Unit) { started = true }
 
-    // ═════════════════════════════════════════════════════════════════════════
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Pine)
+            .background(Slate)
     ) {
-        // Ambient glow — warm gold tint for passenger (vs green for driver)
+        // Warm gradient header tint
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(320.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Gold.copy(alpha = 0.06f), Moss.copy(alpha = 0.04f), Color.Transparent)
+                        listOf(Saffron.copy(alpha = 0.05f), PineMid.copy(alpha = 0.04f), Color.Transparent)
                     )
                 )
         )
@@ -141,19 +99,22 @@ fun PassengerDashboardScreen(
             contentPadding = PaddingValues(bottom = 100.dp)
         ) {
 
-            // ── HEADER ────────────────────────────────────────────────────────
+            // ── Header ────────────────────────────────────────────────────────
             item {
-                PassengerHeader(
-                    onNotifClick = onMyBookings,
-                    modifier     = Modifier
+                PassengerDashHeader(
+                    profile   = profile,
+                    onProfile = onProfile,
+                    onBookings = onMyBookings,
+                    modifier  = Modifier
                         .alpha(headerAlpha)
                         .graphicsLayer { translationY = headerOffset }
                 )
             }
 
-            // ── SEARCH HERO ───────────────────────────────────────────────────
+            // ── Search hero ───────────────────────────────────────────────────
             item {
                 SearchHero(
+                    profile       = profile,
                     onSearchClick = onSearchRoutes,
                     modifier      = Modifier
                         .padding(horizontal = 20.dp)
@@ -163,100 +124,114 @@ fun PassengerDashboardScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // ── QUICK ACTIONS ─────────────────────────────────────────────────
+            // ── Quick actions ─────────────────────────────────────────────────
             item {
                 PassengerQuickActions(
-                    onSearch       = onSearchRoutes,
-                    onBrowse       = onBrowseDrivers,
-                    onMyBookings   = onMyBookings,
-                    modifier       = Modifier
+                    onSearch     = onSearchRoutes,
+                    onBrowse     = onBrowseDrivers,
+                    onMyBookings = onMyBookings,
+                    modifier     = Modifier
                         .alpha(contentAlpha)
                         .graphicsLayer { translationY = contentOffset }
                 )
                 Spacer(modifier = Modifier.height(28.dp))
             }
 
-            // ── POPULAR ROUTES ────────────────────────────────────────────────
-            item {
-                PassengerSectionHeader(
-                    title    = "Popular Routes",
-                    action   = "Browse All →",
-                    onAction = onSearchRoutes,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .alpha(contentAlpha)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            item {
-                LazyRow(
-                    contentPadding        = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier              = Modifier.alpha(contentAlpha)
-                ) {
-                    items(popularRoutes) { route ->
-                        PopularRouteCard(
-                            route   = route,
-                            onClick = onSearchRoutes
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
-            // ── TOP DRIVERS ───────────────────────────────────────────────────
+            // ── Top Drivers ───────────────────────────────────────────────────
             item {
                 PassengerSectionHeader(
                     title    = "Top Drivers",
                     action   = "See All →",
                     onAction = onBrowseDrivers,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .alpha(contentAlpha)
+                    modifier = Modifier.padding(horizontal = 20.dp).alpha(contentAlpha)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
             item {
-                LazyRow(
-                    contentPadding        = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier              = Modifier.alpha(contentAlpha)
-                ) {
-                    items(featuredDrivers) { driver ->
-                        FeaturedDriverCard(
-                            driver  = driver,
-                            onClick = onBrowseDrivers
+                when {
+                    allDriversState is UiState.Loading -> Box(
+                        Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = GlacierTeal, strokeWidth = 2.dp, modifier = Modifier.size(24.dp)
                         )
+                    }
+                    drivers.isEmpty() -> Text(
+                        text     = "No drivers found",
+                        style    = PahadiRaahTypography.bodySmall.copy(color = MistVeil),
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    )
+                    else -> LazyRow(
+                        contentPadding        = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier              = Modifier.alpha(contentAlpha)
+                    ) {
+                        items(drivers.take(6)) { driver ->
+                            RealDriverCard(driver = driver, onClick = onBrowseDrivers)
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(28.dp))
             }
 
-            // ── NEARBY TRIPS ──────────────────────────────────────────────────
+            // ── Available Routes ──────────────────────────────────────────────
             item {
                 PassengerSectionHeader(
                     title    = "Available Now",
                     action   = "View All →",
                     onAction = onSearchRoutes,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .alpha(contentAlpha)
+                    modifier = Modifier.padding(horizontal = 20.dp).alpha(contentAlpha)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            items(nearbyTrips) { trip ->
-                NearbyTripCard(
-                    trip     = trip,
-                    onClick  = onSearchRoutes,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .alpha(contentAlpha)
-                        .graphicsLayer { translationY = contentOffset }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+            when {
+                searchState is UiState.Loading -> item {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) {
+                        CircularProgressIndicator(
+                            color = GlacierTeal, strokeWidth = 2.dp, modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                routes.isEmpty() -> item {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .clip(PahadiRaahShapes.large)
+                            .background(SurfaceGhost)
+                            .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
+                            .padding(32.dp)
+                    ) {
+                        Text("🏔️", fontSize = 32.sp)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text      = "No routes available yet",
+                            style     = PahadiRaahTypography.titleSmall.copy(color = SnowPeak),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text      = "Check back soon — drivers are\nposting new routes daily",
+                            style     = PahadiRaahTypography.bodySmall.copy(color = MistVeil, fontSize = 12.sp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                else -> items(routes.take(6)) { route ->
+                    RealRouteCard(
+                        route    = route,
+                        onClick  = onSearchRoutes,
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .alpha(contentAlpha)
+                            .graphicsLayer { translationY = contentOffset }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
         }
     }
@@ -267,9 +242,11 @@ fun PassengerDashboardScreen(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun PassengerHeader(
-    onNotifClick: () -> Unit,
-    modifier: Modifier = Modifier
+fun PassengerDashHeader(
+    profile:   UserDto?,
+    onProfile: () -> Unit,
+    onBookings: () -> Unit,
+    modifier:  Modifier = Modifier
 ) {
     Row(
         modifier              = modifier
@@ -280,74 +257,73 @@ fun PassengerHeader(
     ) {
         Column {
             Text(
-                text  = "Good morning,",
+                text  = "Hello,",
                 style = PahadiRaahTypography.bodySmall.copy(
-                    color         = Sage.copy(alpha = 0.7f),
-                    letterSpacing = 0.3.sp
+                    color = GlacierLight.copy(alpha = 0.7f), letterSpacing = 0.3.sp
                 )
             )
             Text(
-                text  = "Priya Sharma 🎒",
-                style = PahadiRaahTypography.titleLarge.copy(color = Snow)
+                text     = "${profile?.name ?: "Traveller"} ${profile?.emoji ?: "🎒"}",
+                style    = PahadiRaahTypography.titleLarge.copy(color = SnowPeak),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Notification bell
-        Box {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment     = Alignment.CenterVertically
+        ) {
+            // Bookings icon
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(SurfaceLight)
+                    .background(SurfaceLow)
                     .border(1.dp, BorderSubtle, CircleShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication        = null,
-                        onClick           = onNotifClick
+                        onClick           = onBookings
                     )
             ) {
-                Icon(
-                    imageVector        = Icons.Default.Notifications,
-                    contentDescription = "Notifications",
-                    tint               = Mist,
-                    modifier           = Modifier.size(22.dp)
-                )
+                Text("🎫", fontSize = 18.sp)
             }
-            // Badge
+
+            // Avatar → profile
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.TopEnd)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(Gold)
-            ) {
-                Text(
-                    text  = "2",
-                    style = PahadiRaahTypography.labelSmall.copy(
-                        color         = Pine,
-                        fontSize      = 9.sp,
-                        letterSpacing = 0.sp
+                    .background(SurfaceLow)
+                    .border(1.5.dp, Saffron.copy(alpha = 0.5f), CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication        = null,
+                        onClick           = onProfile
                     )
-                )
+            ) {
+                Text(text = profile?.emoji ?: "🎒", fontSize = 18.sp)
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SEARCH HERO
+//  SEARCH HERO  — shows user name
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun SearchHero(
+    profile:       UserDto?,
     onSearchClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier:      Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "glow")
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.08f, targetValue = 0.16f,
+        initialValue  = 0.08f, targetValue = 0.16f,
         animationSpec = infiniteRepeatable(tween(2400, easing = EaseInOutSine), RepeatMode.Reverse),
         label = "gA"
     )
@@ -356,55 +332,38 @@ fun SearchHero(
         modifier = modifier
             .fillMaxWidth()
             .clip(PahadiRaahShapes.large)
-            .background(
-                Brush.linearGradient(listOf(Forest, Moss.copy(alpha = 0.7f)))
-            )
+            .background(Brush.linearGradient(listOf(PineDeep, PineMid.copy(alpha = 0.7f))))
             .padding(20.dp)
     ) {
-        // Decorative circles
         Box(
             modifier = Modifier
                 .size(160.dp)
                 .align(Alignment.BottomEnd)
                 .offset(x = 50.dp, y = 50.dp)
-                .background(Snow.copy(alpha = glowAlpha), CircleShape)
+                .background(SnowPeak.copy(alpha = glowAlpha), CircleShape)
         )
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .align(Alignment.TopEnd)
-                .offset(x = 20.dp, y = (-20).dp)
-                .background(Gold.copy(alpha = 0.08f), CircleShape)
-        )
-        // Mountain decoration
         Text(
             text     = "🏔️",
             fontSize = 60.sp,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .alpha(0.18f)
-                .offset(x = (-8).dp)
+            modifier = Modifier.align(Alignment.CenterEnd).alpha(0.18f).offset(x = (-8).dp)
         )
 
         Column {
             Text(
                 text  = "WHERE ARE YOU HEADED?",
-                style = EyebrowStyle.copy(fontSize = 10.sp, color = Amber)
+                style = EyebrowStyle.copy(fontSize = 10.sp, color = Marigold)
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text  = "Find Your\nMountain Ride",
-                style = PahadiRaahTypography.headlineSmall.copy(color = Snow)
+                style = PahadiRaahTypography.headlineSmall.copy(color = SnowPeak)
             )
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(Modifier.height(18.dp))
 
-            // Search bar tap target
             val interactionSource = remember { MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
             val scale by animateFloatAsState(
-                if (isPressed) 0.97f else 1f,
-                spring(stiffness = Spring.StiffnessMedium),
-                label = "sb"
+                if (isPressed) 0.97f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "sb"
             )
 
             Row(
@@ -414,26 +373,21 @@ fun SearchHero(
                     .fillMaxWidth()
                     .scale(scale)
                     .clip(PillShape)
-                    .background(Snow.copy(alpha = 0.12f))
-                    .border(1.dp, Snow.copy(alpha = 0.2f), PillShape)
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication        = null,
-                        onClick           = onSearchClick
-                    )
+                    .background(SnowPeak.copy(alpha = 0.12f))
+                    .border(1.dp, SnowPeak.copy(alpha = 0.2f), PillShape)
+                    .clickable(interactionSource = interactionSource, indication = null, onClick = onSearchClick)
                     .padding(horizontal = 18.dp, vertical = 14.dp)
             ) {
                 Icon(
                     imageVector        = Icons.Default.Search,
                     contentDescription = "Search",
-                    tint               = Snow.copy(alpha = 0.6f),
+                    tint               = SnowPeak.copy(alpha = 0.6f),
                     modifier           = Modifier.size(18.dp)
                 )
                 Text(
                     text  = "Search routes, destinations...",
                     style = PahadiRaahTypography.bodyMedium.copy(
-                        color    = Snow.copy(alpha = 0.45f),
-                        fontSize = 14.sp
+                        color = SnowPeak.copy(alpha = 0.45f), fontSize = 14.sp
                     )
                 )
             }
@@ -442,7 +396,230 @@ fun SearchHero(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  QUICK ACTIONS
+//  REAL DRIVER CARD  — from UserDto
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun RealDriverCard(driver: UserDto, onClick: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (isPressed) 0.95f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "rdc"
+    )
+
+    Column(
+        modifier = Modifier
+            .width(172.dp)
+            .scale(scale)
+            .clip(PahadiRaahShapes.large)
+            .background(SurfaceLow)
+            .border(1.dp, if (isPressed) BorderFocus else BorderSubtle, PahadiRaahShapes.large)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(16.dp)
+    ) {
+        // Top row: avatar + rating
+        Row(
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier              = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(PahadiRaahShapes.medium)
+                    .background(Brush.verticalGradient(listOf(PineDeep, PineMid.copy(alpha = 0.7f))))
+            ) {
+                Text(text = driver.emoji, fontSize = 22.sp)
+            }
+            Box(
+                modifier = Modifier
+                    .clip(PillShape)
+                    .background(Marigold.copy(alpha = 0.12f))
+                    .border(1.dp, Marigold.copy(alpha = 0.25f), PillShape)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text  = "⭐ ${String.format("%.1f", driver.avgRating)}",
+                    style = PahadiRaahTypography.labelSmall.copy(
+                        color = Amber, fontSize = 11.sp, letterSpacing = 0.sp
+                    )
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            text     = driver.name,
+            style    = PahadiRaahTypography.titleSmall.copy(color = SnowPeak),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text  = "${driver.totalTrips} trips",
+            style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
+        )
+
+        if (!driver.bio.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(PahadiRaahShapes.small)
+                    .background(SurfaceMid)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    text     = driver.bio,
+                    style    = PahadiRaahTypography.bodySmall.copy(color = MistVeil, fontSize = 11.sp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Online status
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(if (driver.isOnline) GlacierTeal else MistVeil.copy(alpha = 0.3f))
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text  = if (driver.isOnline) "Online" else "Offline",
+                style = PahadiRaahTypography.labelSmall.copy(
+                    color    = if (driver.isOnline) GlacierTeal else MistVeil.copy(alpha = 0.4f),
+                    fontSize = 11.sp,
+                    letterSpacing = 0.sp
+                )
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  REAL ROUTE CARD  — from RouteDto
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun RealRouteCard(route: RouteDto, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (isPressed) 0.97f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "rrc"
+    )
+
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(PahadiRaahShapes.medium)
+            .background(SurfaceLow)
+            .border(1.dp, if (isPressed) BorderFocus else BorderSubtle, PahadiRaahShapes.medium)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(14.dp)
+    ) {
+        // Route icon
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(50.dp)
+                .clip(PahadiRaahShapes.medium)
+                .background(Brush.verticalGradient(listOf(PineDeep, PineMid.copy(alpha = 0.65f))))
+        ) {
+            Text("🏔️", fontSize = 22.sp)
+        }
+
+        // Middle
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(
+                    text     = route.origin,
+                    style    = PahadiRaahTypography.titleSmall.copy(color = SnowPeak, fontSize = 13.sp),
+                    maxLines = 1
+                )
+                Text("→", style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.5f)))
+                Text(
+                    text     = route.destination,
+                    style    = PahadiRaahTypography.titleSmall.copy(color = SnowPeak, fontSize = 13.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text  = "${route.date} • ${route.time.take(5)}",
+                style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
+            )
+
+            Spacer(Modifier.height(5.dp))
+
+            // Driver info from join
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val driver = route.users
+                if (driver != null) {
+                    Text(driver.emoji, fontSize = 12.sp)
+                    Text(
+                        text     = driver.name,
+                        style    = PahadiRaahTypography.bodySmall.copy(color = MistVeil, fontSize = 11.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (driver.avgRating > 0) {
+                        Text("•", style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.3f)))
+                        Text(
+                            text  = "⭐ ${String.format("%.1f", driver.avgRating)}",
+                            style = PahadiRaahTypography.bodySmall.copy(color = Amber, fontSize = 11.sp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Right side
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text  = "₹${route.farePerSeat}",
+                style = FareStyle.copy(fontSize = 17.sp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .clip(PillShape)
+                    .background(
+                        if (route.seatsLeft == 1) Marigold.copy(alpha = 0.15f)
+                        else PineMid.copy(alpha = 0.15f)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    text  = "${route.seatsLeft} left",
+                    style = BadgeStyle.copy(
+                        color    = if (route.seatsLeft == 1) Amber else Sage,
+                        fontSize = 10.sp
+                    )
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  QUICK ACTIONS / SECTION HEADER (unchanged layout, updated colors)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -453,14 +630,12 @@ fun PassengerQuickActions(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier              = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
+        modifier              = modifier.fillMaxWidth().padding(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        PassengerActionCard("🔍", "Search\nRoutes",  Sage,  Modifier.weight(1f), onSearch)
-        PassengerActionCard("👤", "Browse\nDrivers", Amber, Modifier.weight(1f), onBrowse)
-        PassengerActionCard("🎫", "My\nBookings",    Mist,  Modifier.weight(1f), onMyBookings)
+        PassengerActionCard("🔍", "Search\nRoutes",  GlacierTeal, Modifier.weight(1f), onSearch)
+        PassengerActionCard("👤", "Browse\nDrivers", Marigold,    Modifier.weight(1f), onBrowse)
+        PassengerActionCard("🎫", "My\nBookings",    MistVeil,    Modifier.weight(1f), onMyBookings)
     }
 }
 
@@ -475,11 +650,8 @@ fun PassengerActionCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        if (isPressed) 0.93f else 1f,
-        spring(stiffness = Spring.StiffnessMedium),
-        label = "pac"
+        if (isPressed) 0.93f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "pac"
     )
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -491,395 +663,21 @@ fun PassengerActionCard(
                 if (isPressed) accentColor.copy(alpha = 0.4f) else accentColor.copy(alpha = 0.15f),
                 PahadiRaahShapes.medium
             )
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick
-            )
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(vertical = 18.dp, horizontal = 8.dp)
     ) {
         Text(text = emoji, fontSize = 28.sp)
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text      = label,
             style     = PahadiRaahTypography.labelMedium.copy(
-                color         = accentColor,
-                letterSpacing = 0.sp,
-                fontSize      = 11.sp
+                color = accentColor, letterSpacing = 0.sp, fontSize = 11.sp
             ),
             textAlign = TextAlign.Center,
             maxLines  = 2
         )
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  POPULAR ROUTE CARD  — horizontal scroll card
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun PopularRouteCard(
-    route: PopularRoute,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (isPressed) 0.95f else 1f,
-        spring(stiffness = Spring.StiffnessMedium),
-        label = "prc"
-    )
-
-    Column(
-        modifier = Modifier
-            .width(148.dp)
-            .scale(scale)
-            .clip(PahadiRaahShapes.large)
-            .background(SurfaceLight)
-            .border(
-                1.dp,
-                if (isPressed) BorderFocus else BorderSubtle,
-                PahadiRaahShapes.large
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick
-            )
-            .padding(16.dp)
-    ) {
-        // Emoji circle
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.6f)))
-                )
-        ) {
-            Text(text = route.emoji, fontSize = 24.sp)
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Origin
-        Text(
-            text     = route.origin,
-            style    = PahadiRaahTypography.labelMedium.copy(
-                color    = Sage,
-                fontSize = 11.sp,
-                letterSpacing = 0.sp
-            ),
-            maxLines = 1
-        )
-
-        // Arrow + dest
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text  = "→",
-                style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.5f))
-            )
-            Text(
-                text     = route.destination,
-                style    = PahadiRaahTypography.titleSmall.copy(color = Snow, fontSize = 13.sp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Duration
-        Text(
-            text  = "⏱ ${route.duration}",
-            style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 10.sp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Fare
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text  = "from ",
-                style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.5f), fontSize = 10.sp)
-            )
-            Text(
-                text  = route.startingFare,
-                style = FareStyle.copy(fontSize = 15.sp)
-            )
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  FEATURED DRIVER CARD  — horizontal scroll card
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun FeaturedDriverCard(
-    driver: FeaturedDriver,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (isPressed) 0.95f else 1f,
-        spring(stiffness = Spring.StiffnessMedium),
-        label = "fdc"
-    )
-
-    Column(
-        modifier = Modifier
-            .width(172.dp)
-            .scale(scale)
-            .clip(PahadiRaahShapes.large)
-            .background(SurfaceLight)
-            .border(
-                1.dp,
-                if (isPressed) BorderFocus else BorderSubtle,
-                PahadiRaahShapes.large
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick
-            )
-            .padding(16.dp)
-    ) {
-        // Top row: avatar + rating
-        Row(
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier              = Modifier.fillMaxWidth()
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(PahadiRaahShapes.medium)
-                    .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
-            ) {
-                Text(text = driver.emoji, fontSize = 22.sp)
-            }
-
-            // Rating badge
-            Box(
-                modifier = Modifier
-                    .clip(PillShape)
-                    .background(Gold.copy(alpha = 0.12f))
-                    .border(1.dp, Gold.copy(alpha = 0.25f), PillShape)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text  = "⭐ ${driver.rating}",
-                    style = PahadiRaahTypography.labelSmall.copy(
-                        color         = Amber,
-                        fontSize      = 11.sp,
-                        letterSpacing = 0.sp
-                    )
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text     = driver.name,
-            style    = PahadiRaahTypography.titleSmall.copy(color = Snow),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text  = "${driver.trips} trips • ${driver.vehicle}",
-            style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Route
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(PahadiRaahShapes.small)
-                .background(SurfaceMedium)
-                .padding(horizontal = 10.dp, vertical = 7.dp)
-        ) {
-            Text(
-                text     = driver.nextRoute,
-                style    = PahadiRaahTypography.bodySmall.copy(color = Mist, fontSize = 11.sp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Fare + seats
-        Row(
-            modifier              = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            Text(
-                text  = driver.fare,
-                style = FareStyle.copy(fontSize = 16.sp)
-            )
-            Box(
-                modifier = Modifier
-                    .clip(PillShape)
-                    .background(Moss.copy(alpha = 0.15f))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text  = "${driver.seatsLeft} left",
-                    style = BadgeStyle.copy(color = Sage, fontSize = 10.sp)
-                )
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  NEARBY TRIP CARD  — vertical list
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun NearbyTripCard(
-    trip: NearbyTrip,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (isPressed) 0.97f else 1f,
-        spring(stiffness = Spring.StiffnessMedium),
-        label = "ntc"
-    )
-
-    Row(
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(PahadiRaahShapes.medium)
-            .background(SurfaceLight)
-            .border(
-                1.dp,
-                if (isPressed) BorderFocus else BorderSubtle,
-                PahadiRaahShapes.medium
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication        = null,
-                onClick           = onClick
-            )
-            .padding(14.dp)
-    ) {
-        // Route icon
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(50.dp)
-                .clip(PahadiRaahShapes.medium)
-                .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.65f))))
-        ) {
-            Text(text = trip.emoji, fontSize = 22.sp)
-        }
-
-        // Middle info
-        Column(modifier = Modifier.weight(1f)) {
-            // Route
-            Row(
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text(
-                    text     = trip.origin,
-                    style    = PahadiRaahTypography.titleSmall.copy(color = Snow, fontSize = 13.sp),
-                    maxLines = 1
-                )
-                Text(
-                    text  = "→",
-                    style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.5f))
-                )
-                Text(
-                    text     = trip.destination,
-                    style    = PahadiRaahTypography.titleSmall.copy(color = Snow, fontSize = 13.sp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            // Date + time
-            Text(
-                text  = "${trip.date} • ${trip.time}",
-                style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
-            )
-
-            Spacer(modifier = Modifier.height(5.dp))
-
-            // Driver + rating
-            Row(
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(text = trip.driverEmoji, fontSize = 12.sp)
-                Text(
-                    text  = trip.driverName,
-                    style = PahadiRaahTypography.bodySmall.copy(color = Mist, fontSize = 11.sp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text  = "•",
-                    style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.3f))
-                )
-                Text(
-                    text  = "⭐ ${trip.rating}",
-                    style = PahadiRaahTypography.bodySmall.copy(color = Amber, fontSize = 11.sp)
-                )
-            }
-        }
-
-        // Right: fare + seats
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text  = trip.fare,
-                style = FareStyle.copy(fontSize = 17.sp)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Box(
-                modifier = Modifier
-                    .clip(PillShape)
-                    .background(
-                        if (trip.seatsLeft == 1) Gold.copy(alpha = 0.15f)
-                        else Moss.copy(alpha = 0.15f)
-                    )
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text  = "${trip.seatsLeft} left",
-                    style = BadgeStyle.copy(
-                        color    = if (trip.seatsLeft == 1) Amber else Sage,
-                        fontSize = 10.sp
-                    )
-                )
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SECTION HEADER
-// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun PassengerSectionHeader(
@@ -893,10 +691,7 @@ fun PassengerSectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment     = Alignment.CenterVertically
     ) {
-        Text(
-            text  = title,
-            style = PahadiRaahTypography.titleMedium.copy(color = Snow)
-        )
+        Text(text = title, style = PahadiRaahTypography.titleMedium.copy(color = SnowPeak))
         Text(
             text  = action,
             style = PahadiRaahTypography.labelMedium.copy(color = Sage),
@@ -909,9 +704,10 @@ fun PassengerSectionHeader(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  PREVIEW
-// ─────────────────────────────────────────────────────────────────────────────
+// Local data models (still used by older screens that may reference them)
+data class PopularRoute(val emoji: String, val origin: String, val destination: String, val duration: String, val startingFare: String)
+data class FeaturedDriver(val name: String, val emoji: String, val rating: Float, val trips: Int, val vehicle: String, val nextRoute: String, val fare: String, val seatsLeft: Int)
+data class NearbyTrip(val id: String, val emoji: String, val origin: String, val destination: String, val date: String, val time: String, val driverName: String, val driverEmoji: String, val fare: String, val seatsLeft: Int, val rating: Float)
 
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
@@ -921,6 +717,7 @@ fun PassengerDashboardPreview() {
             onSearchRoutes  = {},
             onBrowseDrivers = {},
             onMyBookings    = {},
+            onProfile       = {},
             onBack          = {}
         )
     }

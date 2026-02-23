@@ -102,10 +102,19 @@ fun BookingConfirmScreen(
 ) {
     val routeState    by routeVm.selectedRoute.collectAsStateWithLifecycle()
     val confirmResult by bookingVm.confirmResult.collectAsStateWithLifecycle()
+    val confirmedRef  by bookingVm.confirmedRef.collectAsStateWithLifecycle()
 
     LaunchedEffect(routeId) { routeVm.loadRoute(routeId) }
 
-    val route   = (routeState as? UiState.Success)?.data
+    // Reset booking result when leaving screen
+    DisposableEffect(Unit) { onDispose { bookingVm.resetConfirmResult() } }
+
+    val route        = (routeState as? UiState.Success)?.data
+    val isRouteLoading = routeState is UiState.Loading
+    val routeError   = (routeState as? UiState.Error)?.message
+
+    val maxSeats = (route?.seatsLeft ?: 4).coerceAtLeast(1)
+
     val booking = remember(route) {
         route?.let { r ->
             BookingSummary(
@@ -114,7 +123,11 @@ fun BookingConfirmScreen(
                 driverEmoji  = r.users?.emoji ?: "🧑",
                 driverRating = r.users?.avgRating?.toFloat() ?: 0f,
                 vehicle      = r.vehicleId ?: "Vehicle",
-                vehicleEmoji = "🚐",
+                vehicleEmoji = when {
+                    r.vehicleId?.contains("suv",   ignoreCase = true) == true -> "🚐"
+                    r.vehicleId?.contains("tempo", ignoreCase = true) == true -> "🚌"
+                    else -> "🚙"
+                },
                 origin       = r.origin,
                 destination  = r.destination,
                 date         = r.date,
@@ -125,7 +138,13 @@ fun BookingConfirmScreen(
                 totalFare    = "₹${r.farePerSeat}",
                 serviceFee   = "₹${(r.farePerSeat * 0.05).toInt()}",
                 grandTotal   = "₹${(r.farePerSeat * 1.05).toInt()}",
-                routeEmoji   = "🏔️"
+                routeEmoji   = when {
+                    r.origin.contains("Shimla",      ignoreCase = true) -> "🏔️"
+                    r.origin.contains("Dharamshala", ignoreCase = true) -> "🌲"
+                    r.origin.contains("Rishikesh",   ignoreCase = true) -> "🌊"
+                    r.origin.contains("Nainital",    ignoreCase = true) -> "⛰️"
+                    else -> "🏕️"
+                }
             )
         } ?: bookingSummaryFor(routeId)
     }
@@ -134,15 +153,20 @@ fun BookingConfirmScreen(
     var paymentMethod by remember { mutableStateOf(PaymentMethod.CASH) }
     var agreedToTerms by remember { mutableStateOf(false) }
 
-    val baseFareNum = route?.farePerSeat ?: (booking.farePerSeat.replace("₹","").replace(",","").toIntOrNull() ?: 850)
+    // Clamp seats if maxSeats changes after load
+    LaunchedEffect(maxSeats) { if (seats > maxSeats) seats = maxSeats }
+
+    val baseFareNum = route?.farePerSeat ?: 850
     val totalFare   = baseFareNum * seats
     val serviceFee  = (totalFare * 0.05).toInt()
     val grandTotal  = totalFare + serviceFee
 
     fun formatAmount(v: Int) = "₹${"%,d".format(v)}"
 
-    val isReady     = agreedToTerms
-    val showSuccess = confirmResult is ActionResult.Success
+    val isBookingLoading = confirmResult is ActionResult.Loading
+    val bookingError     = (confirmResult as? ActionResult.Error)?.message
+    val isReady          = agreedToTerms && !isBookingLoading && route != null
+    val showSuccess      = confirmResult is ActionResult.Success
 
     // ── Entrance animations ───────────────────────────────────────────────────
     var started by remember { mutableStateOf(false) }
@@ -154,10 +178,16 @@ fun BookingConfirmScreen(
 
     // ── Success overlay ───────────────────────────────────────────────────────
     if (showSuccess) {
+        val displayBooking = booking.copy(
+            bookingId  = confirmedRef ?: routeId,
+            grandTotal = formatAmount(grandTotal),
+            totalFare  = formatAmount(totalFare),
+            serviceFee = formatAmount(serviceFee)
+        )
         BookingSuccessOverlay(
-            booking   = booking,
-            onTrack   = { onTrackTrip(routeId) },
-            onHome    = onHome
+            booking = displayBooking,
+            onTrack = { onTrackTrip(confirmedRef ?: routeId) },
+            onHome  = onHome
         )
         return
     }
@@ -236,33 +266,71 @@ fun BookingConfirmScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-                // ── ROUTE HERO CARD ───────────────────────────────────────────
-                RouteHeroCard(booking = booking)
+                // ── LOADING STATE ─────────────────────────────────────────────
+                if (isRouteLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(PahadiRaahShapes.large)
+                            .background(SurfaceLight)
+                            .border(1.dp, BorderSubtle, PahadiRaahShapes.large),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Sage, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.height(12.dp))
+                            Text("Loading route details…", style = PahadiRaahTypography.bodySmall.copy(color = Sage))
+                        }
+                    }
+                }
 
-                // ── DRIVER MINI CARD ──────────────────────────────────────────
-                DriverMiniCard(booking = booking)
+                // ── ROUTE ERROR ───────────────────────────────────────────────
+                if (routeError != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(PahadiRaahShapes.medium)
+                            .background(StatusError.copy(alpha = 0.1f))
+                            .border(1.dp, StatusError.copy(alpha = 0.3f), PahadiRaahShapes.medium)
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text  = "⚠️  $routeError",
+                            style = PahadiRaahTypography.bodySmall.copy(color = StatusError)
+                        )
+                    }
+                }
+
+                // ── ROUTE HERO CARD ───────────────────────────────────────────
+                if (!isRouteLoading) {
+                    RouteHeroCard(booking = booking)
+                    DriverMiniCard(booking = booking)
+                }
 
                 // ── SEAT SELECTOR ─────────────────────────────────────────────
                 ConfirmSectionLabel("SEATS")
                 SeatRow(
                     seats      = seats,
-                    maxSeats   = 4,
-                    onIncrease = { if (seats < 4) seats++ },
+                    maxSeats   = maxSeats,
+                    onIncrease = { if (seats < maxSeats) seats++ },
                     onDecrease = { if (seats > 1) seats-- }
                 )
 
                 // ── TRIP DETAILS ──────────────────────────────────────────────
-                ConfirmSectionLabel("TRIP DETAILS")
-                TripDetailsCard(booking = booking)
+                if (!isRouteLoading) {
+                    ConfirmSectionLabel("TRIP DETAILS")
+                    TripDetailsCard(booking = booking)
+                }
 
                 // ── FARE BREAKDOWN ────────────────────────────────────────────
                 ConfirmSectionLabel("FARE BREAKDOWN")
                 FareBreakdownCard(
-                    farePerSeat   = booking.farePerSeat,
-                    seats         = seats,
-                    totalFare     = formatAmount(totalFare),
-                    serviceFee    = formatAmount(serviceFee),
-                    grandTotal    = formatAmount(grandTotal)
+                    farePerSeat = "₹$baseFareNum",
+                    seats       = seats,
+                    totalFare   = formatAmount(totalFare),
+                    serviceFee  = formatAmount(serviceFee),
+                    grandTotal  = formatAmount(grandTotal)
                 )
 
                 // ── PAYMENT METHOD ────────────────────────────────────────────
@@ -271,6 +339,23 @@ fun BookingConfirmScreen(
                     selected = paymentMethod,
                     onSelect = { paymentMethod = it }
                 )
+
+                // ── BOOKING ERROR ─────────────────────────────────────────────
+                if (bookingError != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(PahadiRaahShapes.medium)
+                            .background(StatusError.copy(alpha = 0.1f))
+                            .border(1.dp, StatusError.copy(alpha = 0.3f), PahadiRaahShapes.medium)
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text  = "⚠️  $bookingError",
+                            style = PahadiRaahTypography.bodySmall.copy(color = StatusError)
+                        )
+                    }
+                }
 
                 // ── TERMS ─────────────────────────────────────────────────────
                 Row(
@@ -288,7 +373,6 @@ fun BookingConfirmScreen(
                         )
                         .padding(14.dp)
                 ) {
-                    // Custom checkbox
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -300,11 +384,7 @@ fun BookingConfirmScreen(
                                 else
                                     Brush.verticalGradient(listOf(SurfaceMedium, SurfaceMedium))
                             )
-                            .border(
-                                1.5.dp,
-                                if (agreedToTerms) Sage else BorderSubtle,
-                                PahadiRaahShapes.small
-                            )
+                            .border(1.5.dp, if (agreedToTerms) Sage else BorderSubtle, PahadiRaahShapes.small)
                     ) {
                         if (agreedToTerms) {
                             Icon(
@@ -381,8 +461,9 @@ fun BookingConfirmScreen(
 
                 // Confirm button
                 ConfirmBookingButton(
-                    enabled = isReady,
-                    onClick = {
+                    enabled   = isReady,
+                    isLoading = isBookingLoading,
+                    onClick   = {
                         bookingVm.confirmBooking(
                             routeId       = routeId,
                             seats         = seats,
@@ -392,13 +473,13 @@ fun BookingConfirmScreen(
                     }
                 )
 
-                if (!agreedToTerms) {
+                if (!agreedToTerms && !isBookingLoading) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text      = "Please agree to terms to continue",
                         style     = PahadiRaahTypography.bodySmall.copy(
-                            color     = Sage.copy(alpha = 0.4f),
-                            fontSize  = 11.sp
+                            color    = Sage.copy(alpha = 0.4f),
+                            fontSize = 11.sp
                         ),
                         textAlign = TextAlign.Center,
                         modifier  = Modifier.fillMaxWidth()
@@ -882,7 +963,7 @@ fun PaymentMethodSelector(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun ConfirmBookingButton(enabled: Boolean, onClick: () -> Unit) {
+fun ConfirmBookingButton(enabled: Boolean, isLoading: Boolean = false, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -910,18 +991,26 @@ fun ConfirmBookingButton(enabled: Boolean, onClick: () -> Unit) {
                 onClick           = onClick
             )
     ) {
-        Row(
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(text = "🎫", fontSize = 18.sp)
-            Text(
-                text  = "Confirm Booking",
-                style = PahadiRaahTypography.labelLarge.copy(
-                    color    = if (enabled) Snow else Sage.copy(alpha = 0.4f),
-                    fontSize = 16.sp
-                )
+        if (isLoading) {
+            CircularProgressIndicator(
+                color       = Snow,
+                strokeWidth = 2.dp,
+                modifier    = Modifier.size(24.dp)
             )
+        } else {
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(text = "🎫", fontSize = 18.sp)
+                Text(
+                    text  = "Confirm Booking",
+                    style = PahadiRaahTypography.labelLarge.copy(
+                        color    = if (enabled) Snow else Sage.copy(alpha = 0.4f),
+                        fontSize = 16.sp
+                    )
+                )
+            }
         }
     }
 }

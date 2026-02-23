@@ -44,6 +44,17 @@ class BookingViewModel @Inject constructor(
         }
     }
 
+    // ── All Bookings for Driver (across all routes) ───────────────────────────
+    fun loadDriverBookings() {
+        val uid = authRepo.currentUserId() ?: return
+        viewModelScope.launch {
+            _routeBookings.value = UiState.Loading
+            bookingRepo.getDriverBookings(uid)
+                .onSuccess { _routeBookings.value = UiState.Success(it) }
+                .onFailure { _routeBookings.value = UiState.Error(it.message ?: "Failed to load bookings") }
+        }
+    }
+
     // ── Confirm Booking (Passenger) ────────────────────────────────────────────
     private val _confirmResult   = MutableStateFlow<ActionResult>(ActionResult.Idle)
     val confirmResult: StateFlow<ActionResult> = _confirmResult.asStateFlow()

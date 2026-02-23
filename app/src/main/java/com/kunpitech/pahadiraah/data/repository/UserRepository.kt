@@ -4,7 +4,31 @@ import com.kunpitech.pahadiraah.data.model.UserDto
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import javax.inject.Inject
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TYPED UPDATE PAYLOADS
+//  Supabase uses kotlinx.serialization — Map<String, Any> is NOT supported
+//  because Any has no serializer. Always use @Serializable data classes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Serializable
+private data class OnlineStatusUpdate(
+    @SerialName("is_online") val isOnline: Boolean
+)
+
+@Serializable
+data class ProfileFieldsUpdate(
+    val name:       String,
+    val emoji:      String,
+    val role:       String,
+    val bio:        String?      = null,
+    val languages:  List<String> = emptyList(),
+    val speciality: String?      = null
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  INTERFACE
@@ -23,8 +47,8 @@ interface UserRepository {
     /** Update the current user's online status. */
     suspend fun setOnlineStatus(userId: String, isOnline: Boolean): Result<Unit>
 
-    /** Update profile fields (name, bio, languages, etc.). */
-    suspend fun updateProfile(userId: String, updates: Map<String, Any>): Result<Unit>
+    /** Update profile fields (name, emoji, bio, languages, speciality). */
+    suspend fun updateProfile(userId: String, updates: ProfileFieldsUpdate): Result<Unit>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,21 +86,21 @@ class UserRepositoryImpl @Inject constructor(
         table
             .select(Columns.ALL) {
                 filter { eq("role", "driver") }
-                order("avg_rating", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
+                order("avg_rating", Order.DESCENDING)
             }
             .decodeList<UserDto>()
     }
 
     override suspend fun setOnlineStatus(userId: String, isOnline: Boolean): Result<Unit> =
         runCatching {
-            table.update(mapOf("is_online" to isOnline)) {
+            table.update(OnlineStatusUpdate(isOnline)) {
                 filter { eq("id", userId) }
             }
         }
 
     override suspend fun updateProfile(
         userId:  String,
-        updates: Map<String, Any>
+        updates: ProfileFieldsUpdate
     ): Result<Unit> = runCatching {
         table.update(updates) {
             filter { eq("id", userId) }

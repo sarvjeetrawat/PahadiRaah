@@ -30,6 +30,9 @@ interface BookingRepository {
     /** Driver: fetch all bookings on a specific route. */
     suspend fun getBookingsForRoute(routeId: String): Result<List<BookingDto>>
 
+    /** Driver: fetch ALL bookings across all their routes (for dashboard view). */
+    suspend fun getDriverBookings(driverId: String): Result<List<BookingDto>>
+
     /** Driver: accept or decline a booking. */
     suspend fun updateBookingStatus(bookingId: String, status: String): Result<Unit>
 
@@ -89,9 +92,20 @@ class BookingRepositoryImpl @Inject constructor(
     override suspend fun getBookingsForRoute(routeId: String): Result<List<BookingDto>> =
         runCatching {
             table
-                .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips)")) {
+                .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips), routes(id, origin, destination)")) {
                     filter { eq("route_id", routeId) }
                     order("created_at", Order.ASCENDING)
+                }
+                .decodeList<BookingDto>()
+        }
+
+    override suspend fun getDriverBookings(driverId: String): Result<List<BookingDto>> =
+        runCatching {
+            // Join through routes to filter by driver_id
+            table
+                .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips), routes!inner(id, origin, destination, driver_id)")) {
+                    filter { eq("routes.driver_id", driverId) }
+                    order("created_at", Order.DESCENDING)
                 }
                 .decodeList<BookingDto>()
         }

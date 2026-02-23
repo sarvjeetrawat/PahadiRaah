@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kunpitech.pahadiraah.data.model.RouteDto
+import com.kunpitech.pahadiraah.data.model.RouteBookingDto
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.viewmodel.RouteViewModel
 import com.kunpitech.pahadiraah.ui.theme.*
@@ -94,6 +95,18 @@ fun ActiveRoutesScreen(
     // Map RouteDto → ActiveRoute UI model
     val routes = when (val s = activeRoutesState) {
         is UiState.Success -> s.data.map { r ->
+            val bookedSeats = r.seatsTotal - r.seatsLeft
+            // Map joined bookings → PassengerMini (only accepted bookings)
+            val passengers = r.bookings
+                .filter { it.status == "accepted" }
+                .map { b ->
+                    PassengerMini(
+                        name  = b.users?.name  ?: "Passenger",
+                        emoji = b.users?.emoji ?: "🧑",
+                        seats = b.seats,
+                        fare  = "₹${b.grandTotal}"
+                    )
+                }
             ActiveRoute(
                 id          = r.id,
                 emoji       = when {
@@ -109,7 +122,7 @@ fun ActiveRoutesScreen(
                 date        = r.date,
                 time        = r.time.take(5),
                 totalSeats  = r.seatsTotal,
-                bookedSeats = r.seatsTotal - r.seatsLeft,
+                bookedSeats = bookedSeats,
                 fare        = "₹${r.farePerSeat}",
                 vehicle     = r.vehicleId ?: "Vehicle",
                 status      = when (r.status) {
@@ -118,11 +131,15 @@ fun ActiveRoutesScreen(
                     "cancelled" -> RouteStatus.CANCELLED
                     else        -> RouteStatus.UPCOMING
                 },
-                earnings    = "₹${r.farePerSeat * (r.seatsTotal - r.seatsLeft)}"
+                passengers  = passengers,
+                earnings    = "₹${r.farePerSeat * bookedSeats}"
             )
         }
         else -> emptyList()
     }
+
+    val isLoading = activeRoutesState is UiState.Loading
+    val errorMsg  = (activeRoutesState as? UiState.Error)?.message
 
     var activeFilter by remember { mutableStateOf(RouteFilter.ALL) }
     var expandedId   by remember { mutableStateOf<String?>(null) }
@@ -218,7 +235,7 @@ fun ActiveRoutesScreen(
                 RouteStatCard("📍", "$upcomingCount",  "Upcoming",  Sage,  Modifier.weight(1f))
                 RouteStatCard("🔴", "$ongoingCount",   "Ongoing",   Amber, Modifier.weight(1f))
                 RouteStatCard("✅", "$completedCount", "Done",      Mist,  Modifier.weight(1f))
-              //  RouteStatCard("💰", totalEarnings,     "Earned",    Gold,  Modifier.weight(1f))
+                //  RouteStatCard("💰", totalEarnings,     "Earned",    Gold,  Modifier.weight(1f))
             }
 
             // ── FILTER TABS ───────────────────────────────────────────────────
@@ -249,50 +266,101 @@ fun ActiveRoutesScreen(
             }
 
             // ── ROUTE LIST ────────────────────────────────────────────────────
-            if (filtered.isEmpty()) {
-                RouteEmptyState(
-                    filter   = activeFilter,
-                    modifier = Modifier.weight(1f).alpha(listAlpha)
-                )
-            } else {
-                LazyColumn(
-                    modifier       = Modifier
-                        .weight(1f)
-                        .alpha(listAlpha)
-                        .graphicsLayer { translationY = listOffset },
-                    contentPadding = PaddingValues(
-                        start  = 20.dp,
-                        end    = 20.dp,
-                        bottom = 40.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    itemsIndexed(
-                        items = filtered,
-                        key   = { _, r -> r.id }
-                    ) { index, route ->
-                        val isExpanded = expandedId == route.id
-
-                        AnimatedVisibility(
-                            visible = true,
-                            enter   = fadeIn(tween(300, index * 60)) +
-                                    slideInVertically(tween(350, index * 60)) { it / 3 }
-                        ) {
-                            RouteCard(
-                                route      = route,
-                                isExpanded = isExpanded,
-                                onToggle   = {
-                                    expandedId = if (isExpanded) null else route.id
-                                },
-                                onDelete   = {
-                                    routeVm.cancelRoute(route.id)
-                                    if (expandedId == route.id) expandedId = null
-                                }
-                            )
+            when {
+                isLoading -> {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Sage, strokeWidth = 2.dp, modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Loading routes…", style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.6f)))
                         }
                     }
                 }
-            }
+                errorMsg != null -> {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clip(PahadiRaahShapes.medium)
+                                .background(StatusError.copy(alpha = 0.08f))
+                                .border(1.dp, StatusError.copy(alpha = 0.25f), PahadiRaahShapes.medium)
+                                .padding(24.dp)
+                        ) {
+                            Text("⚠️", fontSize = 32.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Failed to load routes", style = PahadiRaahTypography.titleSmall.copy(color = Snow))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(errorMsg, style = PahadiRaahTypography.bodySmall.copy(color = Mist), textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .clip(PahadiRaahShapes.small)
+                                    .background(Sage.copy(alpha = 0.12f))
+                                    .border(1.dp, Sage.copy(alpha = 0.3f), PahadiRaahShapes.small)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { routeVm.loadActiveRoutes() }
+                                    .padding(horizontal = 24.dp, vertical = 10.dp)
+                            ) {
+                                Text("Retry", style = PahadiRaahTypography.labelMedium.copy(color = Sage, letterSpacing = 0.sp))
+                            }
+                        }
+                    }
+                }
+                filtered.isEmpty() -> {
+                    RouteEmptyState(
+                        filter   = activeFilter,
+                        modifier = Modifier.weight(1f).alpha(listAlpha)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        modifier       = Modifier
+                            .weight(1f)
+                            .alpha(listAlpha)
+                            .graphicsLayer { translationY = listOffset },
+                        contentPadding = PaddingValues(
+                            start  = 20.dp,
+                            end    = 20.dp,
+                            bottom = 40.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        itemsIndexed(
+                            items = filtered,
+                            key   = { _, r -> r.id }
+                        ) { index, route ->
+                            val isExpanded = expandedId == route.id
+
+                            AnimatedVisibility(
+                                visible = true,
+                                enter   = fadeIn(tween(300, index * 60)) +
+                                        slideInVertically(tween(350, index * 60)) { it / 3 }
+                            ) {
+                                RouteCard(
+                                    route      = route,
+                                    isExpanded = isExpanded,
+                                    onToggle   = {
+                                        expandedId = if (isExpanded) null else route.id
+                                    },
+                                    onDelete   = {
+                                        routeVm.cancelRoute(route.id)
+                                        if (expandedId == route.id) expandedId = null
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            } // end when
         }
     }
 }

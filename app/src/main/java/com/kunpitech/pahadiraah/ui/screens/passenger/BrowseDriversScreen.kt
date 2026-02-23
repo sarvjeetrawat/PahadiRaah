@@ -668,7 +668,7 @@ fun DriverCard(
         initialValue  = 1f,
         targetValue   = if (driver.isOnline) 1.4f else 1f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(if (driver.isOnline) 1000 else 0, easing = EaseInOutSine),
+            animation  = tween(if (driver.isOnline) 1000 else Int.MAX_VALUE, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "dot"

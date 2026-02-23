@@ -47,7 +47,7 @@ class RouteRepositoryImpl @Inject constructor(
 ) : RouteRepository {
 
     // Join driver info into each route for display
-    private val routeColumns = Columns.raw("*, users!driver_id(id, name, emoji, avg_rating, vehicle_type, is_online)")
+    private val routeColumns = Columns.raw("*, users!driver_id(id, name, emoji, avg_rating, is_online)")
 
     private val table get() = client.postgrest["routes"]
 
@@ -82,16 +82,15 @@ class RouteRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getActiveRoutes(driverId: String): Result<List<RouteDto>> = runCatching {
+        // Fetch ALL driver routes (upcoming, ongoing, completed) so the Completed tab
+        // in ActiveRoutesScreen is populated. Cancelled routes are excluded.
         table
             .select(Columns.raw("*, bookings(id, passenger_id, seats, status, users!passenger_id(name, emoji, avg_rating))")) {
                 filter {
                     eq("driver_id", driverId)
-                    or {
-                        eq("status", "upcoming")
-                        eq("status", "ongoing")
-                    }
+                    neq("status", "cancelled")
                 }
-                order("date", Order.ASCENDING)
+                order("date", Order.DESCENDING)
             }
             .decodeList<RouteDto>()
     }

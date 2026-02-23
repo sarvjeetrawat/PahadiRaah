@@ -38,9 +38,15 @@ class AuthViewModel @Inject constructor(
     val role: StateFlow<String?> = _role.asStateFlow()
 
     init {
-        // If the app restarts with an existing session, load the role immediately
+        // Watch auth state — load role whenever a session becomes available.
+        // We cannot call currentUserId() synchronously at init because Supabase
+        // hasn't restored the session from storage yet; the flow is the source of truth.
         viewModelScope.launch {
-            authRepo.currentUserId()?.let { loadRole(it) }
+            currentUser.collect { user ->
+                if (user != null && _role.value == null) {
+                    loadRole(user.id)
+                }
+            }
         }
     }
 

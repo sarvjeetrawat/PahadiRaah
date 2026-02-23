@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
@@ -58,7 +59,14 @@ class RouteViewModel @Inject constructor(
         viewModelScope.launch {
             _searchState.value = UiState.Loading
             routeRepo.searchRoutes(origin, dest, minSeats)
-                .onSuccess { _searchState.value = UiState.Success(it) }
+                .onSuccess { routes ->
+                    // Filter out routes whose date has already passed
+                    val today = LocalDate.now()
+                    val upcoming = routes.filter { route ->
+                        try { !LocalDate.parse(route.date).isBefore(today) } catch (e: Exception) { true }
+                    }
+                    _searchState.value = UiState.Success(upcoming)
+                }
                 .onFailure { _searchState.value = UiState.Error(it.message ?: "Search failed") }
         }
     }
@@ -85,7 +93,22 @@ class RouteViewModel @Inject constructor(
         viewModelScope.launch {
             _myRoutes.value = UiState.Loading
             routeRepo.getMyRoutes(uid)
-                .onSuccess { _myRoutes.value = UiState.Success(it) }
+                .onSuccess { routes ->
+                    val today = LocalDate.now()
+                    // Auto-complete stale routes in the background
+                    routes.filter { route ->
+                        try {
+                            LocalDate.parse(route.date).isBefore(today) &&
+                                    route.status != "completed" && route.status != "cancelled"
+                        } catch (e: Exception) { false }
+                    }.forEach { route ->
+                        routeRepo.updateRouteStatus(route.id, "completed")
+                    }
+                    // Reload to reflect updated statuses
+                    routeRepo.getMyRoutes(uid)
+                        .onSuccess { fresh -> _myRoutes.value = UiState.Success(fresh) }
+                        .onFailure { _myRoutes.value = UiState.Success(routes) } // fallback to original
+                }
                 .onFailure { _myRoutes.value = UiState.Error(it.message ?: "Failed to load routes") }
         }
     }
@@ -99,7 +122,28 @@ class RouteViewModel @Inject constructor(
         viewModelScope.launch {
             _activeRoutes.value = UiState.Loading
             routeRepo.getActiveRoutes(uid)
-                .onSuccess { _activeRoutes.value = UiState.Success(it) }
+                .onSuccess { routes ->
+                    val today = LocalDate.now()
+                    // Auto-complete any route whose date has passed and is still "upcoming"/"ongoing"
+                    routes.filter { route ->
+                        try {
+                            LocalDate.parse(route.date).isBefore(today) &&
+                                    (route.status == "upcoming" || route.status == "ongoing")
+                        } catch (e: Exception) { false }
+                    }.forEach { route ->
+                        routeRepo.updateRouteStatus(route.id, "completed")
+                    }
+                    // Update status in-memory immediately so UI reflects it without a second network call
+                    val updated = routes.map { route ->
+                        try {
+                            if (LocalDate.parse(route.date).isBefore(today) &&
+                                (route.status == "upcoming" || route.status == "ongoing"))
+                                route.copy(status = "completed")
+                            else route
+                        } catch (e: Exception) { route }
+                    }
+                    _activeRoutes.value = UiState.Success(updated)
+                }
                 .onFailure { _activeRoutes.value = UiState.Error(it.message ?: "Failed to load active routes") }
         }
     }

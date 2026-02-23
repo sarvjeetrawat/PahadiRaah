@@ -32,12 +32,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kunpitech.pahadiraah.data.model.BookingDto
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.viewmodel.BookingViewModel
 import com.kunpitech.pahadiraah.ui.theme.*
+import kotlinx.coroutines.delay
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DATA MODEL
@@ -74,12 +76,27 @@ fun BookingRequestsScreen(
     val routeBookingsState by bookingVm.routeBookings.collectAsStateWithLifecycle()
     val newBookingAlert    by bookingVm.newBookingAlert.collectAsStateWithLifecycle(null)
 
+    // Show toast when a new booking arrives via realtime
+    var toastBooking by remember { mutableStateOf<BookingDto?>(null) }
+    LaunchedEffect(newBookingAlert) {
+        newBookingAlert?.let {
+            toastBooking = it
+            kotlinx.coroutines.delay(4000)
+            toastBooking = null
+        }
+    }
+
     LaunchedEffect(routeId) {
-        if (routeId != "all") {
+        if (routeId == "all") {
+            bookingVm.loadDriverBookings()
+        } else {
             bookingVm.loadBookingsForRoute(routeId)
             bookingVm.subscribeToBookings(routeId)
         }
     }
+
+    val isLoading  = routeBookingsState is UiState.Loading
+    val errorMsg   = (routeBookingsState as? UiState.Error)?.message
 
     // Map BookingDto → UI BookingRequest model
     val allRequests = when (val s = routeBookingsState) {
@@ -141,13 +158,51 @@ fun BookingRequestsScreen(
                 )
         )
 
+        // ── REALTIME NEW BOOKING TOAST ────────────────────────────────────────
+        AnimatedVisibility(
+            visible  = toastBooking != null,
+            enter    = slideInVertically(initialOffsetY = { -it }) + fadeIn(tween(250)),
+            exit     = slideOutVertically(targetOffsetY = { -it }) + fadeOut(tween(200)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(10f)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+        ) {
+            toastBooking?.let { b ->
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .clip(PahadiRaahShapes.large)
+                        .background(Brush.horizontalGradient(GradientMoss))
+                        .border(1.dp, Sage.copy(alpha = 0.4f), PahadiRaahShapes.large)
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
+                ) {
+                    Text(text = "🔔", fontSize = 18.sp)
+                    Column {
+                        Text(
+                            text  = "New Booking Request!",
+                            style = PahadiRaahTypography.labelMedium.copy(
+                                color         = Snow,
+                                letterSpacing = 0.sp
+                            )
+                        )
+                        Text(
+                            text  = "${b.users?.name ?: "A passenger"} wants ${b.seats} seat${if (b.seats > 1) "s" else ""}",
+                            style = PahadiRaahTypography.bodySmall.copy(color = Snow.copy(alpha = 0.75f))
+                        )
+                    }
+                }
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .systemBarsPadding()
         ) {
-
-            // ── TOP BAR ───────────────────────────────────────────────────────
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -210,44 +265,114 @@ fun BookingRequestsScreen(
             }
 
             // ── SUMMARY STATS ROW ─────────────────────────────────────────────
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 16.dp)
-                    .alpha(headerAlpha)
-                    .graphicsLayer { translationY = headerOffset }
-            ) {
-                RequestStatChip("🕐", "$pendingCount Pending",  Amber, Modifier.weight(1f))
-                RequestStatChip("✅", "$acceptedCount Accepted", Sage,  Modifier.weight(1f))
-                RequestStatChip("✗",  "$declinedCount Declined", Mist.copy(alpha = 0.6f), Modifier.weight(1f))
-            }
-
-            // ── FILTER TABS ───────────────────────────────────────────────────
-            LazyRow(
-                contentPadding        = PaddingValues(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .padding(bottom = 16.dp)
-                    .alpha(listAlpha)
-            ) {
-                val filters = listOf(
-                    RequestFilter.PENDING  to "Pending ($pendingCount)",
-                    RequestFilter.ACCEPTED to "Accepted ($acceptedCount)",
-                    RequestFilter.DECLINED to "Declined ($declinedCount)",
-                    RequestFilter.ALL      to "All (${allRequests.size})",
-                )
-                items(filters) { (filter, label) ->
-                    FilterChip(
-                        label      = label,
-                        isSelected = activeFilter == filter,
-                        onClick    = { activeFilter = filter }
-                    )
+            if (!isLoading && errorMsg == null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 16.dp)
+                        .alpha(headerAlpha)
+                        .graphicsLayer { translationY = headerOffset }
+                ) {
+                    RequestStatChip("🕐", "$pendingCount Pending",  Amber, Modifier.weight(1f))
+                    RequestStatChip("✅", "$acceptedCount Accepted", Sage,  Modifier.weight(1f))
+                    RequestStatChip("✗",  "$declinedCount Declined", Mist.copy(alpha = 0.6f), Modifier.weight(1f))
                 }
-            }
+
+                // ── FILTER TABS ───────────────────────────────────────────────────
+                LazyRow(
+                    contentPadding        = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .padding(bottom = 16.dp)
+                        .alpha(listAlpha)
+                ) {
+                    val filters = listOf(
+                        RequestFilter.PENDING  to "Pending ($pendingCount)",
+                        RequestFilter.ACCEPTED to "Accepted ($acceptedCount)",
+                        RequestFilter.DECLINED to "Declined ($declinedCount)",
+                        RequestFilter.ALL      to "All (${allRequests.size})",
+                    )
+                    items(filters) { (filter, label) ->
+                        FilterChip(
+                            label      = label,
+                            isSelected = activeFilter == filter,
+                            onClick    = { activeFilter = filter }
+                        )
+                    }
+                }
+            } // end !isLoading && errorMsg == null
 
             // ── REQUEST LIST ──────────────────────────────────────────────────
-            if (filtered.isEmpty()) {
+            if (isLoading) {
+                Box(
+                    modifier          = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment  = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color       = Sage,
+                            strokeWidth = 2.dp,
+                            modifier    = Modifier.size(36.dp)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            text  = "Loading requests…",
+                            style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.6f))
+                        )
+                    }
+                }
+            } else if (errorMsg != null) {
+                Box(
+                    modifier         = Modifier.weight(1f).fillMaxWidth().padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier            = Modifier
+                            .fillMaxWidth()
+                            .clip(PahadiRaahShapes.large)
+                            .background(StatusError.copy(alpha = 0.08f))
+                            .border(1.dp, StatusError.copy(alpha = 0.25f), PahadiRaahShapes.large)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(text = "⚠️", fontSize = 32.sp)
+                        Text(
+                            text      = "Failed to load bookings",
+                            style     = PahadiRaahTypography.titleSmall.copy(color = Snow),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text      = errorMsg,
+                            style     = PahadiRaahTypography.bodySmall.copy(
+                                color     = StatusError,
+                                textAlign = TextAlign.Center
+                            )
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(PillShape)
+                                .background(SurfaceLight)
+                                .border(1.dp, BorderSubtle, PillShape)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication        = null,
+                                    onClick           = {
+                                        if (routeId == "all") bookingVm.loadDriverBookings()
+                                        else bookingVm.loadBookingsForRoute(routeId)
+                                    }
+                                )
+                                .padding(horizontal = 24.dp, vertical = 10.dp)
+                        ) {
+                            Text(
+                                text  = "Retry",
+                                style = PahadiRaahTypography.labelMedium.copy(color = Mist, letterSpacing = 0.sp)
+                            )
+                        }
+                    }
+                }
+            } else if (filtered.isEmpty()) {
                 EmptyState(
                     filter   = activeFilter,
                     modifier = Modifier

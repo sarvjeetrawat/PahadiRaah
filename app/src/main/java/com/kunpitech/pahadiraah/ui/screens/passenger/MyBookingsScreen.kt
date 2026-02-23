@@ -324,7 +324,7 @@ fun MyBookingCard(
         initialValue  = 0.3f,
         targetValue   = if (booking.status == MyBookingStatus.ONGOING) 0.8f else 0.3f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(if (booking.status == MyBookingStatus.ONGOING) 1200 else 0, easing = EaseInOutSine),
+            animation  = tween(if (booking.status == MyBookingStatus.ONGOING) 1200 else Int.MAX_VALUE, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pa"

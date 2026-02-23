@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import com.kunpitech.pahadiraah.ui.navigation.PahadiRaahNavGraph
+import com.kunpitech.pahadiraah.ui.screens.navigation.PahadiRaahNavGraph
 import com.kunpitech.pahadiraah.ui.theme.PahadiRaahTheme
 import dagger.hilt.android.AndroidEntryPoint
 

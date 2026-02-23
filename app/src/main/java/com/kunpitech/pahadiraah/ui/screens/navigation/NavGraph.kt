@@ -1,17 +1,27 @@
-package com.kunpitech.pahadiraah.ui.navigation
+package com.kunpitech.pahadiraah.ui.screens.navigation
 
 import androidx.compose.runtime.*
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.kunpitech.pahadiraah.ui.screens.auth.OtpVerifyScreen
+import com.kunpitech.pahadiraah.ui.screens.auth.ProfileCompletionScreen
+import com.kunpitech.pahadiraah.ui.screens.auth.SignInScreen
+import com.kunpitech.pahadiraah.ui.screens.auth.SignUpScreen
 import com.kunpitech.pahadiraah.ui.screens.driver.*
 import com.kunpitech.pahadiraah.ui.screens.passenger.*
+import com.kunpitech.pahadiraah.ui.screens.profile.MyProfileScreen
 import com.kunpitech.pahadiraah.ui.screens.role.RoleSelectScreen
 import com.kunpitech.pahadiraah.ui.screens.splash.SplashScreen
 import com.kunpitech.pahadiraah.viewmodel.AuthViewModel
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ROUTES
@@ -20,12 +30,33 @@ import com.kunpitech.pahadiraah.viewmodel.AuthViewModel
 sealed class Screen(val route: String) {
     object Splash             : Screen("splash")
     object RoleSelect         : Screen("role_select")
+
+    object SignIn             : Screen("sign_in")
+    object SignUp             : Screen("sign_up/{role}") {
+        fun createRoute(role: String) = "sign_up/$role"
+    }
+    object OtpVerify          : Screen("otp_verify/{email}/{name}/{role}") {
+        fun createRoute(email: String, name: String, role: String): String {
+            val enc = { s: String -> URLEncoder.encode(s.ifBlank { "_" }, StandardCharsets.UTF_8.toString()) }
+            return "otp_verify/${enc(email)}/${enc(name)}/${enc(role)}"
+        }
+    }
+    object ProfileCompletion  : Screen("profile_completion/{role}") {
+        fun createRoute(role: String) = "profile_completion/$role"
+    }
+
+    // ── Profile (view/edit own profile) ───────────────────────────────────────
+    object MyProfile          : Screen("my_profile")
+
+    // ── Driver ────────────────────────────────────────────────────────────────
     object DriverDashboard    : Screen("driver_dashboard")
     object PostRoute          : Screen("post_route")
     object ActiveRoutes       : Screen("active_routes")
     object BookingRequests    : Screen("booking_requests/{routeId}") {
         fun createRoute(routeId: String) = "booking_requests/$routeId"
     }
+
+    // ── Passenger ─────────────────────────────────────────────────────────────
     object PassengerDashboard : Screen("passenger_dashboard")
     object SearchRoutes       : Screen("search_routes")
     object BrowseDrivers      : Screen("browse_drivers")
@@ -45,6 +76,15 @@ sealed class Screen(val route: String) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+private fun decode(s: String): String {
+    val decoded = URLDecoder.decode(s, StandardCharsets.UTF_8.toString())
+    return if (decoded == "_") "" else decoded
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  NAV GRAPH
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -52,7 +92,6 @@ sealed class Screen(val route: String) {
 fun PahadiRaahNavGraph(
     navController: NavHostController = rememberNavController()
 ) {
-    // Shared AuthViewModel — one instance across all screens
     val authViewModel: AuthViewModel = hiltViewModel()
     val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
     val role        by authViewModel.role.collectAsStateWithLifecycle()
@@ -63,37 +102,125 @@ fun PahadiRaahNavGraph(
     ) {
 
         // ── Splash ────────────────────────────────────────────────────────────
+        // FIX: Role loads async from Supabase on app restart.
+        // Strategy:
+        //   1. If user is logged in AND role is already loaded → auto-navigate immediately
+        //   2. If user is logged in BUT role still loading → wait, then auto-navigate
+        //   3. If user is NOT logged in → buttons work normally
         composable(Screen.Splash.route) {
+            // Auto-navigate as soon as BOTH currentUser and role are resolved.
+            // AuthViewModel now watches the auth flow, so role will always load
+            // after currentUser becomes non-null — no race condition possible.
+            LaunchedEffect(currentUser, role) {
+                if (currentUser == null) return@LaunchedEffect  // not signed in
+                if (role == null) return@LaunchedEffect          // role still loading
+                val dest = if (role == "driver") Screen.DriverDashboard.route
+                else Screen.PassengerDashboard.route
+                navController.navigate(dest) { popUpTo(0) { inclusive = true } }
+            }
+
             SplashScreen(
-                onNavigateToRoleSelect = {
-                    // If already logged in, skip role select and go straight to dashboard
-                    val dest = if (currentUser != null) {
-                        if (role == "driver") Screen.DriverDashboard.route
-                        else Screen.PassengerDashboard.route
-                    } else {
-                        Screen.RoleSelect.route
-                    }
-                    navController.navigate(dest) {
+                onNavigateToSignUp = {
+                    navController.navigate(Screen.RoleSelect.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
-                }
+                },
+                onNavigateToSignIn = {
+                    navController.navigate(Screen.SignIn.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                isLoggedIn = currentUser != null
             )
         }
 
         // ── Role Select ───────────────────────────────────────────────────────
         composable(Screen.RoleSelect.route) {
             RoleSelectScreen(
-                onDriverSelected    = {
-                    authViewModel.setRole("Driver", "driver")
-                    navController.navigate(Screen.DriverDashboard.route) {
-                        popUpTo(Screen.RoleSelect.route) { inclusive = true }
+                onDriverSelected    = { navController.navigate(Screen.SignUp.createRoute("driver")) },
+                onPassengerSelected = { navController.navigate(Screen.SignUp.createRoute("passenger")) }
+            )
+        }
+
+        // ── Sign Up ───────────────────────────────────────────────────────────
+        composable(
+            route     = Screen.SignUp.route,
+            arguments = listOf(navArgument("role") { type = NavType.StringType })
+        ) {
+            SignUpScreen(
+                onNavigateToOtp = { email, name, role ->
+                    navController.navigate(Screen.OtpVerify.createRoute(email, name, role))
+                },
+                onNavigateBack  = { navController.popBackStack() }
+            )
+        }
+
+        // ── Sign In ───────────────────────────────────────────────────────────
+        composable(Screen.SignIn.route) {
+            SignInScreen(
+                onNavigateToOtp = { email ->
+                    navController.navigate(Screen.OtpVerify.createRoute(email, "", ""))
+                },
+                onNavigateBack  = { navController.popBackStack() }
+            )
+        }
+
+        // ── OTP Verify ────────────────────────────────────────────────────────
+        composable(
+            route     = Screen.OtpVerify.route,
+            arguments = listOf(
+                navArgument("email") { type = NavType.StringType },
+                navArgument("name")  { type = NavType.StringType },
+                navArgument("role")  { type = NavType.StringType }
+            )
+        ) { backStack ->
+            val email   = decode(backStack.arguments?.getString("email") ?: "_")
+            val name    = decode(backStack.arguments?.getString("name")  ?: "_")
+            val roleArg = decode(backStack.arguments?.getString("role")  ?: "_")
+            val isSignUp = roleArg.isNotBlank()
+
+            OtpVerifyScreen(
+                email          = email,
+                name           = name,
+                role           = roleArg,
+                onSuccess      = {
+                    if (isSignUp) {
+                        navController.navigate(Screen.ProfileCompletion.createRoute(roleArg)) {
+                            popUpTo(Screen.RoleSelect.route) { inclusive = true }
+                        }
+                    } else {
+                        val dest = if (authViewModel.role.value == "driver")
+                            Screen.DriverDashboard.route else Screen.PassengerDashboard.route
+                        navController.navigate(dest) { popUpTo(0) { inclusive = true } }
                     }
                 },
-                onPassengerSelected = {
-                    authViewModel.setRole("Passenger", "passenger")
-                    navController.navigate(Screen.PassengerDashboard.route) {
-                        popUpTo(Screen.RoleSelect.route) { inclusive = true }
-                    }
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // ── Profile Completion ────────────────────────────────────────────────
+        composable(
+            route     = Screen.ProfileCompletion.route,
+            arguments = listOf(navArgument("role") { type = NavType.StringType })
+        ) { backStack ->
+            val roleArg = backStack.arguments?.getString("role") ?: "passenger"
+            ProfileCompletionScreen(
+                role       = roleArg,
+                onComplete = {
+                    val dest = if (roleArg == "driver") Screen.DriverDashboard.route
+                    else Screen.PassengerDashboard.route
+                    navController.navigate(dest) { popUpTo(0) { inclusive = true } }
+                }
+            )
+        }
+
+        // ── My Profile ────────────────────────────────────────────────────────
+        composable(Screen.MyProfile.route) {
+            MyProfileScreen(
+                onBack    = { navController.popBackStack() },
+                onSignOut = {
+                    authViewModel.signOut()
+                    navController.navigate(Screen.SignIn.route) { popUpTo(0) { inclusive = true } }
                 }
             )
         }
@@ -106,14 +233,11 @@ fun PahadiRaahNavGraph(
             DriverDashboardScreen(
                 onPostRoute       = { navController.navigate(Screen.PostRoute.route) },
                 onActiveRoutes    = { navController.navigate(Screen.ActiveRoutes.route) },
-                onBookingRequests = {
-                    navController.navigate(Screen.BookingRequests.createRoute("all"))
-                },
-                onBack = {
+                onBookingRequests = { navController.navigate(Screen.BookingRequests.createRoute("all")) },
+                onProfile         = { navController.navigate(Screen.MyProfile.route) },
+                onBack            = {
                     authViewModel.signOut()
-                    navController.navigate(Screen.RoleSelect.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
+                    navController.navigate(Screen.SignIn.route) { popUpTo(0) { inclusive = true } }
                 }
             )
         }
@@ -131,8 +255,8 @@ fun PahadiRaahNavGraph(
 
         composable(Screen.ActiveRoutes.route) {
             ActiveRoutesScreen(
-                onBack            = { navController.popBackStack() },
-                onViewRequests    = { routeId ->
+                onBack         = { navController.popBackStack() },
+                onViewRequests = { routeId ->
                     navController.navigate(Screen.BookingRequests.createRoute(routeId))
                 }
             )
@@ -155,11 +279,10 @@ fun PahadiRaahNavGraph(
                 onSearchRoutes  = { navController.navigate(Screen.SearchRoutes.route) },
                 onBrowseDrivers = { navController.navigate(Screen.BrowseDrivers.route) },
                 onMyBookings    = { navController.navigate(Screen.MyBookings.route) },
-                onBack = {
+                onProfile       = { navController.navigate(Screen.MyProfile.route) },
+                onBack          = {
                     authViewModel.signOut()
-                    navController.navigate(Screen.RoleSelect.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
+                    navController.navigate(Screen.SignIn.route) { popUpTo(0) { inclusive = true } }
                 }
             )
         }
@@ -184,11 +307,11 @@ fun PahadiRaahNavGraph(
 
         composable(Screen.MyBookings.route) {
             MyBookingsScreen(
-                onBack       = { navController.popBackStack() },
-                onTrackTrip  = { bookingId ->
+                onBack      = { navController.popBackStack() },
+                onTrackTrip = { bookingId ->
                     navController.navigate(Screen.TripProgress.createRoute(bookingId))
                 },
-                onRateTrip   = { bookingId, driverId ->
+                onRateTrip  = { bookingId, driverId ->
                     navController.navigate(Screen.RateReview.createRoute(bookingId, driverId))
                 }
             )

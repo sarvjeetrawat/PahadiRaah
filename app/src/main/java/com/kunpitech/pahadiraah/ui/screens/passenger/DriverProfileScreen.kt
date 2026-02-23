@@ -31,6 +31,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kunpitech.pahadiraah.data.model.ReviewDto
+import com.kunpitech.pahadiraah.data.model.RouteDto
+import com.kunpitech.pahadiraah.data.model.UiState
+import com.kunpitech.pahadiraah.data.model.UserDto
+import com.kunpitech.pahadiraah.viewmodel.ReviewViewModel
+import com.kunpitech.pahadiraah.viewmodel.RouteViewModel
+import com.kunpitech.pahadiraah.viewmodel.UserViewModel
 import com.kunpitech.pahadiraah.ui.theme.*
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,32 +72,80 @@ data class UpcomingTrip(
 //  SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  MAPPERS  — DTO → UI model
+// ─────────────────────────────────────────────────────────────────────────────
+
+private fun ReviewDto.toDriverReview() = DriverReview(
+    passengerName  = users?.name  ?: "Passenger",
+    passengerEmoji = users?.emoji ?: "🧑",
+    rating         = overallRating,
+    comment        = comment.ifBlank { "Great experience on this route!" },
+    date           = createdAt?.take(10) ?: "",
+    route          = tags.firstOrNull() ?: "Mountain Route"
+)
+
+private fun RouteDto.toUpcomingTrip() = UpcomingTrip(
+    id         = id,
+    emoji      = when {
+        origin.contains("Shimla",       ignoreCase = true) -> "🏔️"
+        origin.contains("Dharamshala",  ignoreCase = true) -> "🌲"
+        origin.contains("Rishikesh",    ignoreCase = true) -> "🌊"
+        origin.contains("Nainital",     ignoreCase = true) -> "⛰️"
+        origin.contains("Haridwar",     ignoreCase = true) -> "🌊"
+        else -> "🏕️"
+    },
+    origin      = origin,
+    destination = destination,
+    date        = date,
+    time        = time.take(5),
+    fare        = "₹$farePerSeat",
+    seatsLeft   = seatsLeft,
+    totalSeats  = seatsTotal,
+    vehicle     = vehicleId ?: "Vehicle"
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 fun DriverProfileScreen(
-    driverId: String,
-    onBack: () -> Unit,
-    onBookSeat: (String) -> Unit
+    driverId:    String,
+    onBack:      () -> Unit,
+    onBookSeat:  (String) -> Unit,
+    userVm:      UserViewModel   = hiltViewModel(),
+    routeVm:     RouteViewModel  = hiltViewModel(),
+    reviewVm:    ReviewViewModel = hiltViewModel()
 ) {
-    // ── Find driver from shared data ──────────────────────────────────────────
-    val driver = remember(driverId) {
-        sampleDrivers.find { it.id == driverId } ?: sampleDrivers.first()
+    // ── Load all data on enter ────────────────────────────────────────────────
+    LaunchedEffect(driverId) {
+        userVm.loadDriverProfile(driverId)
+        routeVm.loadDriverUpcomingRoutes(driverId)
+        reviewVm.loadDriverReviews(driverId)
     }
 
-    val reviews = remember {
-        listOf(
-            DriverReview("Priya Sharma",  "👩", 5, "Amazing driver! Very safe on mountain roads. Knew every turn and made sure we were comfortable throughout.", "2 days ago",  "Shimla → Manali"),
-            DriverReview("Arjun Thakur",  "👨", 5, "Excellent experience. Ramesh is highly knowledgeable about Himalayan routes. Would book again without hesitation.", "1 week ago",  "Dharamshala → Spiti"),
-            DriverReview("Meena Rawat",   "👩", 4, "Good driver, very punctual. The vehicle was clean and comfortable. Minor stop was unexpected but overall great.", "2 weeks ago", "Shimla → Manali"),
-            DriverReview("Rohit Verma",   "👨", 5, "Best mountain driver I've had. He knows secret viewpoints along the route too!", "1 month ago", "Shimla → Manali"),
-        )
+    val profileState  by userVm.driverProfile.collectAsStateWithLifecycle()
+    val routesState   by routeVm.driverUpcoming.collectAsStateWithLifecycle()
+    val reviewsState  by reviewVm.reviews.collectAsStateWithLifecycle()
+
+    // ── Map to UI models ──────────────────────────────────────────────────────
+    val driver: UserDto? = (profileState as? UiState.Success)?.data
+    val upcomingTrips = (routesState as? UiState.Success)?.data
+        ?.map { it.toUpcomingTrip() } ?: emptyList()
+    val reviews = (reviewsState as? UiState.Success)?.data
+        ?.map { it.toDriverReview() } ?: emptyList()
+
+    // Derive badges from real profile data
+    val badges = buildList {
+        if ((driver?.totalTrips ?: 0) >= 100) add(DriverBadge("🏆", "100+ Trips"))
+        if ((driver?.avgRating ?: 0.0) >= 4.8) add(DriverBadge("⭐", "Top Rated"))
+        if ((driver?.languages?.size ?: 0) >= 3) add(DriverBadge("🌐", "Multilingual"))
+        if ((driver?.yearsActive ?: 0) >= 3) add(DriverBadge("🗺️", "Expert Guide"))
+        if (driver?.isOnline == true) add(DriverBadge("🟢", "Available Now"))
     }
 
-    val upcomingTrips = remember {
-        listOf(
-            UpcomingTrip("t1", "🏔️", "Shimla", "Manali",       "Jun 22", "6:00 AM", "₹850",   2, 4, "SUV / Jeep"),
-            UpcomingTrip("t2", "🗻", "Dharamshala", "Spiti Valley", "Jun 28", "5:00 AM", "₹1,200", 4, 6, "SUV / Jeep"),
-        )
-    }
+    val isLoading = profileState is UiState.Loading
 
     var selectedTripId by remember { mutableStateOf<String?>(null) }
 
@@ -100,13 +157,15 @@ fun DriverProfileScreen(
     val contentOffset by animateFloatAsState(if (started) 0f else 30f, tween(700, delayMillis = 200, easing = EaseOutCubic), label = "cY")
     LaunchedEffect(Unit) { started = true }
 
+    val isOnline = driver?.isOnline ?: false
+
     // Online pulse
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue  = 0.4f,
-        targetValue   = if (driver.isOnline) 1f else 0.4f,
+        targetValue   = if (isOnline) 1f else 0.4f,
         animationSpec = infiniteRepeatable(
-            animation  = tween(if (driver.isOnline) 1200 else Int.MAX_VALUE, easing = EaseInOutSine),
+            animation  = tween(if (isOnline) 1200 else Int.MAX_VALUE, easing = EaseInOutSine),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pA"
@@ -143,7 +202,7 @@ fun DriverProfileScreen(
 
                     // Decorative mountain emoji
                     Text(
-                        text     = "🏔️",
+                        text     = driver?.emoji ?: "🏔️",
                         fontSize = 120.sp,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -159,14 +218,8 @@ fun DriverProfileScreen(
                             .padding(horizontal = 20.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        ProfileIconBtn(
-                            icon    = Icons.Default.ArrowBack,
-                            onClick = onBack
-                        )
-                        ProfileIconBtn(
-                            icon    = Icons.Default.Share,
-                            onClick = {}
-                        )
+                        ProfileIconBtn(icon = Icons.Default.ArrowBack, onClick = onBack)
+                        ProfileIconBtn(icon = Icons.Default.Share,     onClick = {})
                     }
 
                     // Avatar + name block
@@ -176,77 +229,74 @@ fun DriverProfileScreen(
                             .fillMaxWidth()
                             .padding(top = 80.dp)
                     ) {
-                        // Avatar with online ring
-                        Box(contentAlignment = Alignment.Center) {
-                            // Glow ring
-                            if (driver.isOnline) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color       = Sage,
+                                strokeWidth = 2.dp,
+                                modifier    = Modifier.size(48.dp)
+                            )
+                        } else {
+                            // Avatar with online ring
+                            Box(contentAlignment = Alignment.Center) {
+                                if (isOnline) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(96.dp)
+                                            .clip(CircleShape)
+                                            .background(Sage.copy(alpha = pulseAlpha * 0.25f))
+                                    )
+                                }
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(CircleShape)
+                                        .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
+                                        .border(3.dp, if (isOnline) Sage else BorderSubtle, CircleShape)
+                                ) {
+                                    Text(text = driver?.emoji ?: "🧑", fontSize = 38.sp)
+                                }
                                 Box(
                                     modifier = Modifier
-                                        .size(96.dp)
+                                        .size(18.dp)
+                                        .align(Alignment.BottomEnd)
                                         .clip(CircleShape)
-                                        .background(Sage.copy(alpha = pulseAlpha * 0.25f))
+                                        .background(if (isOnline) Sage else SurfaceMedium)
+                                        .border(3.dp, Pine, CircleShape)
                                 )
                             }
-                            // Avatar
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(80.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f)))
-                                    )
-                                    .border(3.dp, if (driver.isOnline) Sage else BorderSubtle, CircleShape)
-                            ) {
-                                Text(text = driver.emoji, fontSize = 38.sp)
-                            }
-                            // Online dot
-                            Box(
-                                modifier = Modifier
-                                    .size(18.dp)
-                                    .align(Alignment.BottomEnd)
-                                    .clip(CircleShape)
-                                    .background(if (driver.isOnline) Sage else SurfaceMedium)
-                                    .border(3.dp, Pine, CircleShape)
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text(
+                                text      = driver?.name ?: "Loading…",
+                                style     = PahadiRaahTypography.headlineSmall.copy(color = Snow),
+                                textAlign = TextAlign.Center
                             )
-                        }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
 
-                        // Name
-                        Text(
-                            text  = driver.name,
-                            style = PahadiRaahTypography.headlineSmall.copy(color = Snow),
-                            textAlign = TextAlign.Center
-                        )
+                            Text(
+                                text  = driver?.speciality ?: "Mountain Driver",
+                                style = PahadiRaahTypography.bodyMedium.copy(color = Amber, fontSize = 13.sp),
+                                textAlign = TextAlign.Center
+                            )
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                        // Speciality
-                        Text(
-                            text  = driver.speciality,
-                            style = PahadiRaahTypography.bodyMedium.copy(
-                                color    = Amber,
-                                fontSize = 13.sp
-                            ),
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Rating + trips + years row
-                        Row(
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment     = Alignment.CenterVertically,
-                            modifier              = Modifier.padding(horizontal = 20.dp)
-                        ) {
-                            HeroStat("⭐", "${driver.rating}", "Rating")
-                            ProfileStatDivider()
-                            HeroStat("🛣️", "${driver.totalTrips}", "Trips")
-                            ProfileStatDivider()
-                            HeroStat("📅", "${driver.yearsActive} yrs", "Active")
-                            ProfileStatDivider()
-                            HeroStat("🌐", "${driver.languages.size}", "Languages")
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment     = Alignment.CenterVertically,
+                                modifier              = Modifier.padding(horizontal = 20.dp)
+                            ) {
+                                HeroStat("⭐", "${"%.1f".format(driver?.avgRating ?: 0.0)}", "Rating")
+                                ProfileStatDivider()
+                                HeroStat("🛣️", "${driver?.totalTrips ?: 0}", "Trips")
+                                ProfileStatDivider()
+                                HeroStat("📅", "${driver?.yearsActive ?: 0} yrs", "Active")
+                                ProfileStatDivider()
+                                HeroStat("🌐", "${driver?.languages?.size ?: 0}", "Languages")
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(20.dp))
@@ -255,60 +305,73 @@ fun DriverProfileScreen(
             }
 
             // ── BADGES ────────────────────────────────────────────────────────
-            item {
-                LazyRow(
-                    contentPadding        = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier              = Modifier
-                        .padding(bottom = 20.dp)
-                        .alpha(contentAlpha)
-                        .graphicsLayer { translationY = contentOffset }
-                ) {
-                    items(driver.badges) { badge ->
-                        Row(
-                            verticalAlignment     = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier
-                                .clip(PillShape)
-                                .background(Gold.copy(alpha = 0.1f))
-                                .border(1.dp, Gold.copy(alpha = 0.22f), PillShape)
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(text = badge.emoji, fontSize = 12.sp)
-                            Text(
-                                text  = badge.label,
-                                style = BadgeStyle.copy(color = Amber.copy(alpha = 0.85f), fontSize = 10.sp)
-                            )
+            if (badges.isNotEmpty()) {
+                item {
+                    LazyRow(
+                        contentPadding        = PaddingValues(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier              = Modifier
+                            .padding(bottom = 20.dp)
+                            .alpha(contentAlpha)
+                            .graphicsLayer { translationY = contentOffset }
+                    ) {
+                        items(badges) { badge ->
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier
+                                    .clip(PillShape)
+                                    .background(Gold.copy(alpha = 0.1f))
+                                    .border(1.dp, Gold.copy(alpha = 0.22f), PillShape)
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(text = badge.emoji, fontSize = 12.sp)
+                                Text(
+                                    text  = badge.label,
+                                    style = BadgeStyle.copy(color = Amber.copy(alpha = 0.85f), fontSize = 10.sp)
+                                )
+                            }
                         }
                     }
                 }
             }
 
             // ── ABOUT SECTION ─────────────────────────────────────────────────
-            item {
-                ProfileSection(
-                    title    = "About",
-                    modifier = Modifier
-                        .alpha(contentAlpha)
-                        .graphicsLayer { translationY = contentOffset }
-                ) {
-                    Column(
+            if (driver != null) {
+                item {
+                    ProfileSection(
+                        title    = "About",
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(PahadiRaahShapes.large)
-                            .background(SurfaceLight)
-                            .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                            .alpha(contentAlpha)
+                            .graphicsLayer { translationY = contentOffset }
                     ) {
-                        AboutRow("🚙", "Vehicle",    driver.vehicle)
-                        AboutRow("🌐", "Languages",  driver.languages.joinToString(" • "))
-                        AboutRow("📍", "Key Routes", driver.routes.joinToString("\n"))
-                        AboutRow("⏱️", "Avg Duration", "6–8 hrs per trip")
-                        AboutRow("💳", "Starting Fare", driver.fare + " / seat")
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(PahadiRaahShapes.large)
+                                .background(SurfaceLight)
+                                .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
+                                .padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            if (driver.bio?.isNotBlank() == true) {
+                                AboutRow("📝", "Bio", driver.bio)
+                            }
+                            if (driver.languages.isNotEmpty()) {
+                                AboutRow("🌐", "Languages", driver.languages.joinToString(" • "))
+                            }
+                            if (driver.speciality?.isNotBlank() == true) {
+                                AboutRow("🏔️", "Speciality", driver.speciality)
+                            }
+                            AboutRow("📅", "Experience", "${driver.yearsActive} years active")
+                            AboutRow(
+                                "🟢", "Status",
+                                if (driver.isOnline) "Available for bookings" else "Currently offline"
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
             // ── UPCOMING TRIPS ────────────────────────────────────────────────
@@ -319,15 +382,37 @@ fun DriverProfileScreen(
                         .alpha(contentAlpha)
                         .graphicsLayer { translationY = contentOffset }
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        upcomingTrips.forEach { trip ->
-                            UpcomingTripCard(
-                                trip       = trip,
-                                isSelected = selectedTripId == trip.id,
-                                onSelect   = {
-                                    selectedTripId = if (selectedTripId == trip.id) null else trip.id
-                                }
+                    if (routesState is UiState.Loading) {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Sage, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        }
+                    } else if (upcomingTrips.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(PahadiRaahShapes.large)
+                                .background(SurfaceLight)
+                                .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text  = "No upcoming trips posted yet",
+                                style = PahadiRaahTypography.bodyMedium.copy(color = Sage.copy(alpha = 0.5f)),
+                                textAlign = TextAlign.Center
                             )
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            upcomingTrips.forEach { trip ->
+                                UpcomingTripCard(
+                                    trip       = trip,
+                                    isSelected = selectedTripId == trip.id,
+                                    onSelect   = {
+                                        selectedTripId = if (selectedTripId == trip.id) null else trip.id
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -343,7 +428,7 @@ fun DriverProfileScreen(
                         .graphicsLayer { translationY = contentOffset }
                 ) {
                     RatingBreakdown(
-                        rating  = driver.rating,
+                        rating  = driver?.avgRating?.toFloat() ?: 0f,
                         reviews = reviews
                     )
                 }
@@ -351,20 +436,48 @@ fun DriverProfileScreen(
             }
 
             // ── REVIEW CARDS ──────────────────────────────────────────────────
-            items(reviews) { review ->
-                ReviewCard(
-                    review   = review,
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .alpha(contentAlpha)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+            if (reviewsState is UiState.Loading) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Sage, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                    }
+                }
+            } else if (reviews.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .fillMaxWidth()
+                            .clip(PahadiRaahShapes.large)
+                            .background(SurfaceLight)
+                            .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text      = "No reviews yet — be the first to ride!",
+                            style     = PahadiRaahTypography.bodyMedium.copy(color = Sage.copy(alpha = 0.5f)),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            } else {
+                items(reviews) { review ->
+                    ReviewCard(
+                        review   = review,
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .alpha(contentAlpha)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
         }
 
         // ── BOTTOM CTA ────────────────────────────────────────────────────────
-        BookingCta(
-            driver         = driver,
+        BookingCtaDynamic(
+            driverName     = driver?.name,
             selectedTripId = selectedTripId,
             onBook         = { tripId -> onBookSeat(tripId) },
             modifier       = Modifier
@@ -809,11 +922,11 @@ fun ReviewCard(review: DriverReview, modifier: Modifier = Modifier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun BookingCta(
-    driver: DriverProfile,
+fun BookingCtaDynamic(
+    driverName:     String?,
     selectedTripId: String?,
-    onBook: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onBook:         (String) -> Unit,
+    modifier:       Modifier = Modifier
 ) {
     val isEnabled = selectedTripId != null
     val interactionSource = remember { MutableInteractionSource() }

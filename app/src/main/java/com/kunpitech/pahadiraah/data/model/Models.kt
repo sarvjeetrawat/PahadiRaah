@@ -13,7 +13,7 @@ data class UserDto(
     val name:         String        = "",
     val email:        String?       = null,
     val phone:        String?       = null,
-    val role:         String        = "passenger",   // "driver" | "passenger"
+    val role:         String        = "passenger",
     val emoji:        String        = "🧑",
     @SerialName("avatar_url")
     val avatarUrl:    String?       = null,
@@ -66,6 +66,24 @@ data class NewVehicle(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  ROUTE BOOKING  — flat booking nested inside RouteDto (no back-ref to RouteDto)
+//  Used only for the passenger list in ActiveRoutesScreen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Serializable
+data class RouteBookingDto(
+    val id:              String   = "",
+    @SerialName("passenger_id")
+    val passengerId:     String   = "",
+    val seats:           Int      = 1,
+    @SerialName("grand_total")
+    val grandTotal:      Int      = 0,
+    val status:          String   = "pending",
+    // joined passenger info
+    val users:           UserDto? = null
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  ROUTE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -86,8 +104,8 @@ data class RouteDto(
     val destLat:        Double? = null,
     @SerialName("dest_lng")
     val destLng:        Double? = null,
-    val date:           String  = "",   // "2025-06-22"
-    val time:           String  = "",   // "06:00:00"
+    val date:           String  = "",
+    val time:           String  = "",
     @SerialName("duration_hrs")
     val durationHrs:    String  = "",
     @SerialName("seats_total")
@@ -99,8 +117,10 @@ data class RouteDto(
     val status:         String  = "upcoming",
     @SerialName("created_at")
     val createdAt:      String? = null,
-    // joined from users table via select("*, users!driver_id(*)")
-    val users:          UserDto? = null
+    // joined driver info
+    val users:          UserDto?            = null,
+    // joined bookings with passenger info — uses RouteBookingDto to avoid circular ref
+    val bookings:       List<RouteBookingDto> = emptyList()
 )
 
 @Serializable
@@ -156,7 +176,7 @@ data class BookingDto(
     val createdAt:        String?  = null,
     // joins
     val routes:           RouteDto? = null,
-    val users:            UserDto?  = null   // passenger info
+    val users:            UserDto?  = null
 )
 
 @Serializable
@@ -197,8 +217,7 @@ data class ReviewDto(
     val comment:          String              = "",
     @SerialName("created_at")
     val createdAt:        String?             = null,
-    // joined
-    val users:            UserDto?            = null   // reviewer info
+    val users:            UserDto?            = null
 )
 
 @Serializable
@@ -253,7 +272,6 @@ data class UpsertLocation(
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  UI STATE WRAPPERS
-//  These are used by ViewModels to communicate state to Compose screens.
 // ─────────────────────────────────────────────────────────────────────────────
 
 sealed class UiState<out T> {
@@ -263,7 +281,6 @@ sealed class UiState<out T> {
     data object Idle                           : UiState<Nothing>()
 }
 
-// Result wrapper for one-shot operations (login, post route, etc.)
 sealed class ActionResult {
     data object Loading                        : ActionResult()
     data object Success                        : ActionResult()

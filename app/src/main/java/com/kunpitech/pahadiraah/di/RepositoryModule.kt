@@ -28,4 +28,7 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindLocationRepository(impl: LocationRepositoryImpl): LocationRepository
+
+    @Binds @Singleton
+    abstract fun bindVehicleRepository(impl: VehicleRepositoryImpl): VehicleRepository
 }
