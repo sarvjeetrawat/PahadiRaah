@@ -141,8 +141,11 @@ fun ActiveRoutesScreen(
     val isLoading = activeRoutesState is UiState.Loading
     val errorMsg  = (activeRoutesState as? UiState.Error)?.message
 
-    var activeFilter by remember { mutableStateOf(RouteFilter.ALL) }
-    var expandedId   by remember { mutableStateOf<String?>(null) }
+    var activeFilter    by remember { mutableStateOf(RouteFilter.ALL) }
+    var expandedId      by remember { mutableStateOf<String?>(null) }
+    // Confirmation dialog state
+    var confirmRouteId  by remember { mutableStateOf<String?>(null) }
+    var confirmIsRemove by remember { mutableStateOf(false) } // true = completed route "Remove", false = upcoming "Cancel"
 
     val filtered = when (activeFilter) {
         RouteFilter.ALL       -> routes
@@ -352,8 +355,8 @@ fun ActiveRoutesScreen(
                                         expandedId = if (isExpanded) null else route.id
                                     },
                                     onDelete   = {
-                                        routeVm.cancelRoute(route.id)
-                                        if (expandedId == route.id) expandedId = null
+                                        confirmRouteId  = route.id
+                                        confirmIsRemove = route.status == RouteStatus.COMPLETED
                                     }
                                 )
                             }
@@ -361,6 +364,97 @@ fun ActiveRoutesScreen(
                     }
                 }
             } // end when
+        }
+    }
+
+    // ── Confirmation Dialog ───────────────────────────────────────────────────
+    if (confirmRouteId != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { confirmRouteId = null }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(PahadiRaahShapes.large)
+                    .background(SurfaceMedium)
+                    .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text  = if (confirmIsRemove) "🗑️" else "⚠️",
+                    fontSize = 40.sp
+                )
+                Text(
+                    text  = if (confirmIsRemove) "Remove Route?" else "Cancel Route?",
+                    style = PahadiRaahTypography.headlineSmall.copy(
+                        color    = Snow,
+                        fontSize = 18.sp
+                    )
+                )
+                Text(
+                    text  = if (confirmIsRemove)
+                        "This completed route will be removed from your list."
+                    else
+                        "This will cancel the route and notify all booked passengers.",
+                    style = PahadiRaahTypography.bodyMedium.copy(
+                        color     = Mist,
+                        fontSize  = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Keep / Cancel dialog
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(PahadiRaahShapes.medium)
+                            .background(SurfaceLight)
+                            .border(1.dp, BorderSubtle, PahadiRaahShapes.medium)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication        = null
+                            ) { confirmRouteId = null }
+                    ) {
+                        Text(
+                            "Keep",
+                            style = PahadiRaahTypography.labelMedium.copy(color = Mist)
+                        )
+                    }
+                    // Confirm action
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(PahadiRaahShapes.medium)
+                            .background(
+                                Brush.horizontalGradient(listOf(StatusError, StatusError.copy(alpha = 0.7f)))
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication        = null
+                            ) {
+                                confirmRouteId?.let { id ->
+                                    routeVm.cancelRoute(id)
+                                    if (expandedId == id) expandedId = null
+                                }
+                                confirmRouteId = null
+                            }
+                    ) {
+                        Text(
+                            if (confirmIsRemove) "Remove" else "Yes, Cancel",
+                            style = PahadiRaahTypography.labelMedium.copy(color = Snow)
+                        )
+                    }
+                }
+            }
         }
     }
 }

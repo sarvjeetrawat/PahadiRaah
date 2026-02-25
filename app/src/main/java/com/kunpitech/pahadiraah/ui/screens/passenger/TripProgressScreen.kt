@@ -67,30 +67,6 @@ data class LiveTrip(
     val milestones:   List<TripMilestone>
 )
 
-fun liveTripFor(tripId: String) = LiveTrip(
-    tripId       = tripId,
-    origin       = "Shimla",
-    destination  = "Manali",
-    routeEmoji   = "🏔️",
-    driverName   = "Ramesh Kumar",
-    driverEmoji  = "🧔",
-    vehicle      = "SUV / Jeep",
-    date         = "Jun 22, 2025",
-    departedAt   = "6:14 AM",
-    eta          = "1:30 PM",
-    progressFrac = 0.42f,
-    currentLeg   = "En route to Mandi",
-    speed        = "58 km/h",
-    distance     = "148 km remaining",
-    milestones   = listOf(
-        TripMilestone("Shimla (Start)",    "📍", "6:00 AM",  isDone = true,  isActive = false),
-        TripMilestone("Shoghi Bypass",     "🛣️", "6:28 AM",  isDone = true,  isActive = false),
-        TripMilestone("Mandi",             "🏙️", "9:00 AM",  isDone = false, isActive = true),
-        TripMilestone("Kullu",             "🌿", "10:45 AM", isDone = false, isActive = false),
-        TripMilestone("Bhuntar Junction",  "🔀", "11:15 AM", isDone = false, isActive = false),
-        TripMilestone("Manali (Arrival)",  "🏁", "1:30 PM",  isDone = false, isActive = false),
-    )
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SCREEN
@@ -141,7 +117,23 @@ fun TripProgressScreen(
                 distance    = "-- km remaining",
                 milestones  = emptyList()
             )
-        } ?: liveTripFor(bookingId)
+        } ?: LiveTrip(
+            tripId       = bookingId,
+            origin       = "Loading…",
+            destination  = "",
+            routeEmoji   = "🏔️",
+            driverName   = "Loading…",
+            driverEmoji  = "🧑",
+            vehicle      = "",
+            date         = "",
+            departedAt   = "--",
+            eta          = "--",
+            progressFrac = 0f,
+            currentLeg   = "Fetching trip details…",
+            speed        = "-- km/h",
+            distance     = "-- km remaining",
+            milestones   = emptyList()
+        )
     }
 
     // ── Entrance animations ───────────────────────────────────────────────────

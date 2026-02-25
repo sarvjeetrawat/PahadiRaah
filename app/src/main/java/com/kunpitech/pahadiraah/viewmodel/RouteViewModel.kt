@@ -10,6 +10,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 import javax.inject.Inject
 
 @HiltViewModel
@@ -60,10 +62,18 @@ class RouteViewModel @Inject constructor(
             _searchState.value = UiState.Loading
             routeRepo.searchRoutes(origin, dest, minSeats)
                 .onSuccess { routes ->
-                    // Filter out routes whose date has already passed
-                    val today = LocalDate.now()
+                    // Filter out routes whose departure datetime has already passed
+                    val now = LocalDateTime.now()
                     val upcoming = routes.filter { route ->
-                        try { !LocalDate.parse(route.date).isBefore(today) } catch (e: Exception) { true }
+                        try {
+                            val routeDate = LocalDate.parse(route.date)
+                            val timeParts = route.time.split(":").map { it.toIntOrNull() ?: 0 }
+                            val routeTime = LocalTime.of(
+                                timeParts.getOrElse(0) { 0 },
+                                timeParts.getOrElse(1) { 0 }
+                            )
+                            !LocalDateTime.of(routeDate, routeTime).isBefore(now)
+                        } catch (e: Exception) { true }
                     }
                     _searchState.value = UiState.Success(upcoming)
                 }
@@ -94,20 +104,34 @@ class RouteViewModel @Inject constructor(
             _myRoutes.value = UiState.Loading
             routeRepo.getMyRoutes(uid)
                 .onSuccess { routes ->
-                    val today = LocalDate.now()
-                    // Auto-complete stale routes in the background
-                    routes.filter { route ->
+                    val now   = LocalDateTime.now()
+                    val today = now.toLocalDate()
+                    val updated = routes.map { route ->
                         try {
-                            LocalDate.parse(route.date).isBefore(today) &&
-                                    route.status != "completed" && route.status != "cancelled"
-                        } catch (e: Exception) { false }
-                    }.forEach { route ->
-                        routeRepo.updateRouteStatus(route.id, "completed")
+                            val routeDate = LocalDate.parse(route.date)
+                            val timeParts = route.time.split(":").map { it.toIntOrNull() ?: 0 }
+                            val routeTime = LocalTime.of(
+                                timeParts.getOrElse(0) { 0 },
+                                timeParts.getOrElse(1) { 0 },
+                                timeParts.getOrElse(2) { 0 }
+                            )
+                            val departureDt = LocalDateTime.of(routeDate, routeTime)
+                            when {
+                                route.status == "upcoming" && departureDt.isBefore(now) &&
+                                        !routeDate.isBefore(today) -> {
+                                    routeRepo.updateRouteStatus(route.id, "ongoing")
+                                    route.copy(status = "ongoing")
+                                }
+                                (route.status == "upcoming" || route.status == "ongoing") &&
+                                        routeDate.isBefore(today) -> {
+                                    routeRepo.updateRouteStatus(route.id, "completed")
+                                    route.copy(status = "completed")
+                                }
+                                else -> route
+                            }
+                        } catch (e: Exception) { route }
                     }
-                    // Reload to reflect updated statuses
-                    routeRepo.getMyRoutes(uid)
-                        .onSuccess { fresh -> _myRoutes.value = UiState.Success(fresh) }
-                        .onFailure { _myRoutes.value = UiState.Success(routes) } // fallback to original
+                    _myRoutes.value = UiState.Success(updated)
                 }
                 .onFailure { _myRoutes.value = UiState.Error(it.message ?: "Failed to load routes") }
         }
@@ -123,23 +147,36 @@ class RouteViewModel @Inject constructor(
             _activeRoutes.value = UiState.Loading
             routeRepo.getActiveRoutes(uid)
                 .onSuccess { routes ->
-                    val today = LocalDate.now()
-                    // Auto-complete any route whose date has passed and is still "upcoming"/"ongoing"
-                    routes.filter { route ->
-                        try {
-                            LocalDate.parse(route.date).isBefore(today) &&
-                                    (route.status == "upcoming" || route.status == "ongoing")
-                        } catch (e: Exception) { false }
-                    }.forEach { route ->
-                        routeRepo.updateRouteStatus(route.id, "completed")
-                    }
-                    // Update status in-memory immediately so UI reflects it without a second network call
+                    val now   = LocalDateTime.now()
+                    val today = now.toLocalDate()
+
                     val updated = routes.map { route ->
                         try {
-                            if (LocalDate.parse(route.date).isBefore(today) &&
-                                (route.status == "upcoming" || route.status == "ongoing"))
-                                route.copy(status = "completed")
-                            else route
+                            val routeDate = LocalDate.parse(route.date)
+                            // Parse time — stored as "HH:mm:ss" or "HH:mm"
+                            val timeParts = route.time.split(":").map { it.toIntOrNull() ?: 0 }
+                            val routeTime = LocalTime.of(
+                                timeParts.getOrElse(0) { 0 },
+                                timeParts.getOrElse(1) { 0 },
+                                timeParts.getOrElse(2) { 0 }
+                            )
+                            val departureDt = LocalDateTime.of(routeDate, routeTime)
+
+                            when {
+                                // Past the departure time today or on a past date → ongoing
+                                route.status == "upcoming" && departureDt.isBefore(now) &&
+                                        !routeDate.isBefore(today) -> {
+                                    routeRepo.updateRouteStatus(route.id, "ongoing")
+                                    route.copy(status = "ongoing")
+                                }
+                                // Route date fully in the past → completed
+                                (route.status == "upcoming" || route.status == "ongoing") &&
+                                        routeDate.isBefore(today) -> {
+                                    routeRepo.updateRouteStatus(route.id, "completed")
+                                    route.copy(status = "completed")
+                                }
+                                else -> route
+                            }
                         } catch (e: Exception) { route }
                     }
                     _activeRoutes.value = UiState.Success(updated)
@@ -211,8 +248,14 @@ class RouteViewModel @Inject constructor(
 
     fun cancelRoute(routeId: String) {
         viewModelScope.launch {
+            // Remove from in-memory list immediately for instant UI feedback
+            val current = _activeRoutes.value
+            if (current is UiState.Success) {
+                _activeRoutes.value = UiState.Success(
+                    current.data.filter { it.id != routeId }
+                )
+            }
             routeRepo.cancelRoute(routeId)
-            loadMyRoutes()
         }
     }
 }

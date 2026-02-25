@@ -106,4 +106,10 @@ dependencies {
 
     // ── Coil ─────────────────────────────────────────────────────────────────
     implementation(libs.coil.compose)
+
+
+
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play)
+    implementation(libs.googleid)
 }

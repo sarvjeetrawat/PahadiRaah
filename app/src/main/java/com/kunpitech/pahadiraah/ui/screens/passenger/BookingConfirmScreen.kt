@@ -103,8 +103,12 @@ fun BookingConfirmScreen(
     val routeState    by routeVm.selectedRoute.collectAsStateWithLifecycle()
     val confirmResult by bookingVm.confirmResult.collectAsStateWithLifecycle()
     val confirmedRef  by bookingVm.confirmedRef.collectAsStateWithLifecycle()
+    val myBookingsState by bookingVm.myBookings.collectAsStateWithLifecycle()
 
-    LaunchedEffect(routeId) { routeVm.loadRoute(routeId) }
+    LaunchedEffect(routeId) {
+        routeVm.loadRoute(routeId)
+        bookingVm.loadMyBookings()
+    }
 
     // Reset booking result when leaving screen
     DisposableEffect(Unit) { onDispose { bookingVm.resetConfirmResult() } }
@@ -149,10 +153,20 @@ fun BookingConfirmScreen(
         } ?: bookingSummaryFor(routeId)
     }
 
+    // ── Existing booking check — must come BEFORE LaunchedEffect that uses it ──
+    val existingBookings = (myBookingsState as? com.kunpitech.pahadiraah.data.model.UiState.Success)?.data ?: emptyList()
+    val existingBooking  = existingBookings.firstOrNull { it.routeId == routeId && it.status != "cancelled" }
+    val alreadyBooked    = existingBooking != null
+    val isEditMode       = alreadyBooked
+
     var seats         by remember { mutableIntStateOf(1) }
     var paymentMethod by remember { mutableStateOf(PaymentMethod.CASH) }
     var agreedToTerms by remember { mutableStateOf(false) }
 
+    // In edit mode: pre-fill seats from existing booking + 1 (minimum add 1)
+    LaunchedEffect(existingBooking) {
+        if (existingBooking != null) seats = existingBooking.seats + 1
+    }
     // Clamp seats if maxSeats changes after load
     LaunchedEffect(maxSeats) { if (seats > maxSeats) seats = maxSeats }
 
@@ -164,8 +178,17 @@ fun BookingConfirmScreen(
     fun formatAmount(v: Int) = "₹${"%,d".format(v)}"
 
     val isBookingLoading = confirmResult is ActionResult.Loading
-    val bookingError     = (confirmResult as? ActionResult.Error)?.message
-    val isReady          = agreedToTerms && !isBookingLoading && route != null
+    // Map duplicate key constraint to friendly message
+    val bookingError     = (confirmResult as? ActionResult.Error)?.message?.let { raw ->
+        if (raw.contains("unique_passenger_route", ignoreCase = true) ||
+            raw.contains("duplicate key", ignoreCase = true))
+            "You already have a booking on this route."
+        else raw
+    }
+    // In edit mode, seats must be > existing seats (adding more only)
+    val minSeats         = if (isEditMode) (existingBooking?.seats ?: 1) + 1 else 1
+    val isReady          = agreedToTerms && !isBookingLoading && route != null &&
+            (!isEditMode || seats >= minSeats)
     val showSuccess      = confirmResult is ActionResult.Success
 
     // ── Entrance animations ───────────────────────────────────────────────────
@@ -459,21 +482,67 @@ fun BookingConfirmScreen(
                     }
                 }
 
-                // Confirm button
+                // Edit mode banner — shown when passenger already has a booking
+                if (isEditMode && existingBooking != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(PahadiRaahShapes.medium)
+                            .background(Amber.copy(alpha = 0.08f))
+                            .border(1.dp, Amber.copy(alpha = 0.3f), PahadiRaahShapes.medium)
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("✏️", fontSize = 16.sp)
+                            Text(
+                                "Edit Booking",
+                                style = PahadiRaahTypography.titleSmall.copy(color = Amber, fontSize = 13.sp)
+                            )
+                        }
+                        Text(
+                            "You already have ${existingBooking.seats} seat${if (existingBooking.seats > 1) "s" else ""} booked. " +
+                                    "Select new total seat count below (minimum ${minSeats}).",
+                            style = PahadiRaahTypography.bodySmall.copy(color = Mist, fontSize = 11.sp, lineHeight = 16.sp)
+                        )
+                        if (seats < minSeats) {
+                            Text(
+                                "⚠ Must book at least $minSeats seats total to add more.",
+                                style = PahadiRaahTypography.bodySmall.copy(color = Amber.copy(alpha = 0.8f), fontSize = 11.sp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Confirm / Update button
                 ConfirmBookingButton(
                     enabled   = isReady,
                     isLoading = isBookingLoading,
+                    label     = if (isEditMode) "Update Booking" else "Confirm Booking",
                     onClick   = {
-                        bookingVm.confirmBooking(
-                            routeId       = routeId,
-                            seats         = seats,
-                            farePerSeat   = baseFareNum,
-                            paymentMethod = paymentMethod.name.lowercase()
-                        )
+                        if (isEditMode && existingBooking != null) {
+                            bookingVm.updateBooking(
+                                bookingId   = existingBooking.id,
+                                seats       = seats,
+                                farePerSeat = baseFareNum
+                            )
+                        } else {
+                            bookingVm.confirmBooking(
+                                routeId       = routeId,
+                                seats         = seats,
+                                farePerSeat   = baseFareNum,
+                                paymentMethod = paymentMethod.name.lowercase()
+                            )
+                        }
                     }
                 )
 
-                if (!agreedToTerms && !isBookingLoading) {
+                if (!agreedToTerms && !isBookingLoading && !alreadyBooked) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text      = "Please agree to terms to continue",
@@ -963,7 +1032,7 @@ fun PaymentMethodSelector(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun ConfirmBookingButton(enabled: Boolean, isLoading: Boolean = false, onClick: () -> Unit) {
+fun ConfirmBookingButton(enabled: Boolean, isLoading: Boolean = false, label: String = "Confirm Booking", onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1002,9 +1071,9 @@ fun ConfirmBookingButton(enabled: Boolean, isLoading: Boolean = false, onClick: 
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(text = "🎫", fontSize = 18.sp)
+                Text(text = if (label.startsWith("Update")) "✏️" else "🎫", fontSize = 18.sp)
                 Text(
-                    text  = "Confirm Booking",
+                    text  = label,
                     style = PahadiRaahTypography.labelLarge.copy(
                         color    = if (enabled) Snow else Sage.copy(alpha = 0.4f),
                         fontSize = 16.sp

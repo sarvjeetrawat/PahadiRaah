@@ -127,9 +127,13 @@ class RouteRepositoryImpl @Inject constructor(
 
     override suspend fun updateRouteStatus(routeId: String, status: String): Result<Unit> =
         runCatching {
-            table.update(mapOf("status" to status)) {
+            table.update({
+                set("status", status)
+            }) {
                 filter { eq("id", routeId) }
+                select()
             }
+            Unit
         }
 
     override suspend fun cancelRoute(routeId: String): Result<Unit> =

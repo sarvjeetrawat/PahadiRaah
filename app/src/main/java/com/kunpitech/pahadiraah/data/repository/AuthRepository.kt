@@ -88,10 +88,13 @@ class AuthRepositoryImpl @Inject constructor(
         name:   String,
         role:   String
     ): Result<Unit> = runCatching {
-        client.postgrest["users"].update(
-            mapOf("name" to name, "role" to role)
-        ) {
+        client.postgrest["users"].update({
+            set("name", name)
+            set("role", role)
+        }) {
             filter { eq("id", userId) }
+            select()
         }
+        Unit
     }
 }

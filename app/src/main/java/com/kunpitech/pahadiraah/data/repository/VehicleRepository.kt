@@ -52,8 +52,12 @@ class VehicleRepositoryImpl @Inject constructor(
         vehicleId: String,
         updates:   Map<String, Any>
     ): Result<Unit> = runCatching {
-        table.update(updates) {
+        table.update({
+            updates.forEach { (key, value) -> set(key, value.toString()) }
+        }) {
             filter { eq("id", vehicleId) }
+            select()
         }
+        Unit
     }
 }

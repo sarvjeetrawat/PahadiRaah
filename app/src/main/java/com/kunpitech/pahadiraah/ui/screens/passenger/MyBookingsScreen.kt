@@ -54,6 +54,7 @@ data class MyBooking(
     val driverName:   String,
     val driverEmoji:  String,
     val driverRating: Float,
+    val driverId:     String  = "",
     val seats:        Int,
     val fare:         String,
     val status:       MyBookingStatus,
@@ -65,13 +66,6 @@ data class MyBooking(
 enum class MyBookingStatus { UPCOMING, ONGOING, COMPLETED, CANCELLED }
 enum class BookingTab       { ALL, UPCOMING, ONGOING, COMPLETED, CANCELLED }
 
-private val myBookings = listOf(
-    MyBooking("1","🏔️","Shimla","Manali",        "Jun 22, 2025","6:00 AM","Ramesh Kumar","🧔",4.9f,1,"₹893", MyBookingStatus.UPCOMING,  "SUV / Jeep","#PH000001"),
-    MyBooking("2","🌄","Dehradun","Mussoorie",    "Jun 18, 2025","8:30 AM","Sita Devi",   "👩",4.7f,2,"₹630", MyBookingStatus.ONGOING,   "Tempo",     "#PH000002"),
-    MyBooking("3","⛰️","Nainital","Bhimtal",      "Jun 12, 2025","9:00 AM","Arjun Singh", "👨",4.5f,1,"₹189", MyBookingStatus.COMPLETED, "Sedan",     "#PH000003", hasReview = true),
-    MyBooking("4","🗻","Dharamshala","Spiti",     "Jun 5, 2025", "5:00 AM","Dev Mehta",   "👨",4.8f,2,"₹2,520",MyBookingStatus.COMPLETED,"SUV / Jeep","#PH000004"),
-    MyBooking("5","🌲","Rishikesh","Chopta",      "May 30, 2025","7:00 AM","Meena Rawat", "👩",4.6f,1,"₹578", MyBookingStatus.CANCELLED, "Sedan",     "#PH000005"),
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SCREEN
@@ -106,7 +100,8 @@ private fun BookingDto.toMyBooking() = MyBooking(
     },
     vehicle      = routes?.vehicleId ?: "Vehicle",
     bookingRef   = "#$bookingRef",
-    hasReview    = hasReview
+    hasReview    = hasReview,
+    driverId     = routes?.driverId ?: ""
 )
 
 @Composable
@@ -285,8 +280,7 @@ fun MyBookingsScreen(
                                 onToggle   = { expandedId = if (expandedId == booking.id) null else booking.id },
                                 onTrack    = { onTrackTrip(booking.id) },
                                 onReview   = {
-                                    val driverId = "" // extracted from booking in real impl
-                                    onRateTrip(booking.id, driverId)
+                                    onRateTrip(booking.id, booking.driverId)
                                 }
                             )
                         }

@@ -93,17 +93,30 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun setOnlineStatus(userId: String, isOnline: Boolean): Result<Unit> =
         runCatching {
-            table.update(OnlineStatusUpdate(isOnline)) {
+            table.update({
+                set("is_online", isOnline)
+            }) {
                 filter { eq("id", userId) }
+                select()
             }
+            Unit
         }
 
     override suspend fun updateProfile(
         userId:  String,
         updates: ProfileFieldsUpdate
     ): Result<Unit> = runCatching {
-        table.update(updates) {
+        table.update({
+            set("name",       updates.name)
+            set("emoji",      updates.emoji)
+            set("role",       updates.role)
+            set("bio",        updates.bio)
+            set("languages",  updates.languages)
+            set("speciality", updates.speciality)
+        }) {
             filter { eq("id", userId) }
+            select()
         }
+        Unit
     }
 }

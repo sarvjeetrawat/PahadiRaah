@@ -36,6 +36,7 @@ import com.kunpitech.pahadiraah.data.model.RouteDto
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.data.model.UserDto
 import com.kunpitech.pahadiraah.ui.theme.*
+import com.kunpitech.pahadiraah.viewmodel.BookingViewModel
 import com.kunpitech.pahadiraah.viewmodel.RouteViewModel
 import com.kunpitech.pahadiraah.viewmodel.UserViewModel
 
@@ -50,17 +51,20 @@ fun DriverDashboardScreen(
     onBookingRequests: () -> Unit,
     onProfile:         () -> Unit,
     onBack:            () -> Unit,
-    userViewModel:  UserViewModel  = hiltViewModel(),
-    routeViewModel: RouteViewModel = hiltViewModel()
+    userViewModel:   UserViewModel   = hiltViewModel(),
+    routeViewModel:  RouteViewModel  = hiltViewModel(),
+    bookingViewModel: BookingViewModel = hiltViewModel()
 ) {
-    val profileState by userViewModel.myProfile.collectAsStateWithLifecycle()
-    val myRoutesState by routeViewModel.myRoutes.collectAsStateWithLifecycle()
-    val isOnline by userViewModel.isOnline.collectAsStateWithLifecycle()
+    val profileState   by userViewModel.myProfile.collectAsStateWithLifecycle()
+    val myRoutesState  by routeViewModel.myRoutes.collectAsStateWithLifecycle()
+    val pendingCount   by bookingViewModel.pendingCount.collectAsStateWithLifecycle()
+    val isOnline       by userViewModel.isOnline.collectAsStateWithLifecycle()
 
     // Load data on entry
     LaunchedEffect(Unit) {
         userViewModel.loadMyProfile()
         routeViewModel.loadMyRoutes()
+        bookingViewModel.loadDriverBookings()
     }
 
     // Sync online toggle with profile once loaded
@@ -75,9 +79,10 @@ fun DriverDashboardScreen(
     val routes  = (myRoutesState as? UiState.Success<List<RouteDto>>)?.data ?: emptyList()
 
     // Derived stats from real data
-    val totalTrips  = profile?.totalTrips ?: 0
-    val avgRating   = profile?.avgRating ?: 0.0
-    val activeCount = routes.count { it.status == "upcoming" || it.status == "ongoing" }
+    val totalTrips   = profile?.totalTrips ?: 0
+    val avgRating    = profile?.avgRating ?: 0.0
+    val activeCount  = routes.count { it.status == "upcoming" || it.status == "ongoing" }
+    // pendingCount comes directly from BookingViewModel.pendingCount StateFlow
 
     // Entrance animation
     var started by remember { mutableStateOf(false) }
@@ -154,7 +159,7 @@ fun DriverDashboardScreen(
                     onPostRoute       = onPostRoute,
                     onActiveRoutes    = onActiveRoutes,
                     onBookingRequests = onBookingRequests,
-                    pendingCount      = activeCount,
+                    pendingCount      = pendingCount,
                     modifier          = Modifier
                         .alpha(contentAlpha)
                         .graphicsLayer { translationY = contentOffset }

@@ -7,6 +7,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.query.filter.FilterOperator
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.decodeRecord
@@ -36,11 +37,23 @@ interface BookingRepository {
     /** Driver: accept or decline a booking. */
     suspend fun updateBookingStatus(bookingId: String, status: String): Result<Unit>
 
+    /** Driver: decrease seats_left on a route when a booking is accepted. */
+    suspend fun decreaseSeatsLeft(routeId: String, seats: Int): Result<Unit>
+
     /** Driver: mark a booking's payment as received (cash). */
     suspend fun markPaid(bookingId: String): Result<Unit>
 
     /** Passenger: cancel a booking. */
     suspend fun cancelBooking(bookingId: String): Result<Unit>
+
+    /** Passenger: update seats + fares on an existing booking. */
+    suspend fun updateBookingSeats(
+        bookingId:  String,
+        seats:      Int,
+        totalFare:  Int,
+        serviceFee: Int,
+        grandTotal: Int
+    ): Result<Unit>
 
     /**
      * Realtime: returns a Flow that emits a new BookingDto every time a
@@ -59,6 +72,9 @@ interface BookingRepository {
 //  IMPLEMENTATION
 // ─────────────────────────────────────────────────────────────────────────────
 
+@kotlinx.serialization.Serializable
+private data class RouteIdOnly(val id: String = "")
+
 class BookingRepositoryImpl @Inject constructor(
     private val client: SupabaseClient
 ) : BookingRepository {
@@ -66,7 +82,7 @@ class BookingRepositoryImpl @Inject constructor(
     // Columns: join route and passenger user info
     private val bookingColumns = Columns.raw(
         "*, " +
-                "routes(id, origin, destination, date, time, duration_hrs, fare_per_seat, vehicle_id, " +
+                "routes(id, driver_id, origin, destination, date, time, duration_hrs, fare_per_seat, vehicle_id, " +
                 "  users!driver_id(id, name, emoji, avg_rating)), " +
                 "users!passenger_id(id, name, emoji, avg_rating, total_trips)"
     )
@@ -89,8 +105,10 @@ class BookingRepositoryImpl @Inject constructor(
                 .decodeList<BookingDto>()
         }
 
-    override suspend fun getBookingsForRoute(routeId: String): Result<List<BookingDto>> =
-        runCatching {
+    override suspend fun getBookingsForRoute(routeId: String): Result<List<BookingDto>> {
+        // Hard guard — "all" is a sentinel value, never a real route UUID
+        if (routeId == "all" || routeId.isBlank()) return Result.success(emptyList())
+        return runCatching {
             table
                 .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips), routes(id, origin, destination)")) {
                     filter { eq("route_id", routeId) }
@@ -98,13 +116,24 @@ class BookingRepositoryImpl @Inject constructor(
                 }
                 .decodeList<BookingDto>()
         }
+    }
 
     override suspend fun getDriverBookings(driverId: String): Result<List<BookingDto>> =
         runCatching {
-            // Join through routes to filter by driver_id
+            // Step 1: fetch all route IDs that belong to this driver
+            val routeIds = client.postgrest["routes"]
+                .select(Columns.raw("id")) {
+                    filter { eq("driver_id", driverId) }
+                }
+                .decodeList<RouteIdOnly>()
+                .map { it.id }
+
+            if (routeIds.isEmpty()) return@runCatching emptyList()
+
+            // Step 2: fetch bookings whose route_id is in that set
             table
-                .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips), routes!inner(id, origin, destination, driver_id)")) {
-                    filter { eq("routes.driver_id", driverId) }
+                .select(Columns.raw("*, users!passenger_id(id, name, emoji, avg_rating, total_trips), routes(id, origin, destination, driver_id)")) {
+                    filter { isIn("route_id", routeIds) }
                     order("created_at", Order.DESCENDING)
                 }
                 .decodeList<BookingDto>()
@@ -112,15 +141,51 @@ class BookingRepositoryImpl @Inject constructor(
 
     override suspend fun updateBookingStatus(bookingId: String, status: String): Result<Unit> =
         runCatching {
-            table.update(mapOf("status" to status)) {
+            table.update({
+                set("status", status)
+            }) {
                 filter { eq("id", bookingId) }
+                select()
             }
+            Unit
+        }
+
+    override suspend fun decreaseSeatsLeft(routeId: String, seats: Int): Result<Unit> =
+        runCatching {
+            // Use rpc to safely decrement seats_left
+            client.postgrest.rpc(
+                "decrease_seats_left",
+                mapOf("route_id" to routeId, "seat_count" to seats)
+            )
         }
 
     override suspend fun markPaid(bookingId: String): Result<Unit> = runCatching {
-        table.update(mapOf("payment_status" to "paid")) {
+        table.update({
+            set("payment_status", "paid")
+        }) {
             filter { eq("id", bookingId) }
+            select()
         }
+        Unit
+    }
+
+    override suspend fun updateBookingSeats(
+        bookingId:  String,
+        seats:      Int,
+        totalFare:  Int,
+        serviceFee: Int,
+        grandTotal: Int
+    ): Result<Unit> = runCatching {
+        table.update({
+            set("seats",       seats)
+            set("total_fare",  totalFare)
+            set("service_fee", serviceFee)
+            set("grand_total", grandTotal)
+        }) {
+            filter { eq("id", bookingId) }
+            select()
+        }
+        Unit
     }
 
     override suspend fun cancelBooking(bookingId: String): Result<Unit> =
