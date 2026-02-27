@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
@@ -214,6 +215,123 @@ fun AuthTextField(
                 text  = error,
                 style = PahadiRaahTypography.labelMedium.copy(color = StatusError)
             )
+        }
+    }
+}
+
+// ── Or Divider ────────────────────────────────────────────────────────────────
+
+@Composable
+fun AuthOrDivider(modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier              = modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, BorderSubtle)
+                    )
+                )
+        )
+        Text(
+            text  = "or continue with",
+            style = PahadiRaahTypography.bodySmall.copy(
+                color    = MistVeil.copy(alpha = 0.45f),
+                fontSize = 11.sp
+            )
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(BorderSubtle, Color.Transparent)
+                    )
+                )
+        )
+    }
+}
+
+// ── Google Sign-In Button ────────────────────────────────────────────────────
+//  Styled to match the app's dark mountain aesthetic while still being
+//  recognisably "the Google button" (white logo pill on a slightly lit surface).
+
+@Composable
+fun GoogleSignInButton(
+    isLoading: Boolean = false,
+    onClick:   () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed         by interactionSource.collectIsPressedAsState()
+    val scale             by animateFloatAsState(
+        targetValue   = if (isPressed && !isLoading) 0.97f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label         = "googleScale"
+    )
+    val bgAlpha by animateFloatAsState(
+        targetValue   = if (isPressed && !isLoading) 0.85f else 1f,
+        animationSpec = tween(100),
+        label         = "googleBg"
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .scale(scale)
+            .alpha(bgAlpha)
+            .clip(RoundedCornerShape(Dimens.InputCorner))
+            .background(SurfaceLow)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(Dimens.InputCorner))
+            .clickable(
+                interactionSource = interactionSource,
+                indication        = null,
+                enabled           = !isLoading,
+                onClick           = onClick
+            )
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier  = Modifier.size(22.dp),
+                color     = GlacierTeal,
+                strokeWidth = 2.dp
+            )
+        } else {
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Google "G" rendered as styled text — no image dependency needed
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.White)
+                ) {
+                    Text(
+                        text  = "G",
+                        style = PahadiRaahTypography.titleSmall.copy(
+                            color    = Color(0xFF4285F4),
+                            fontSize = 13.sp
+                        )
+                    )
+                }
+                Text(
+                    text  = "Sign in with Google",
+                    style = PahadiRaahTypography.labelLarge.copy(
+                        color    = SnowPeak,
+                        fontSize = 15.sp
+                    )
+                )
+            }
         }
     }
 }

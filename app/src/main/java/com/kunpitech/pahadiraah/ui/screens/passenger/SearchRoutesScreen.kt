@@ -119,7 +119,7 @@ private fun RouteDto.toRouteResult() = RouteResult(
     driverEmoji  = users?.emoji ?: "🧑",
     driverRating = users?.avgRating?.toFloat() ?: 0f,
     driverTrips  = users?.totalTrips ?: 0,
-    vehicle      = vehicleId ?: "SUV / Jeep",
+    vehicle      = "Vehicle",
     fare         = "₹$farePerSeat",
     seatsLeft    = seatsLeft,
     totalSeats   = seatsTotal,
@@ -136,10 +136,12 @@ fun SearchRoutesScreen(
     val focusManager   = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val searchState    by routeVm.searchState.collectAsStateWithLifecycle()
+    val suggestions    by routeVm.suggestions.collectAsStateWithLifecycle()
 
     // ── Search state ──────────────────────────────────────────────────────────
-    var originQuery  by remember { mutableStateOf("") }
-    var destQuery    by remember { mutableStateOf("") }
+    var originQuery    by remember { mutableStateOf("") }
+    var destQuery      by remember { mutableStateOf("") }
+    var activeField    by remember { mutableStateOf<String?>(null) } // "origin" | "dest" | null
     var selectedDate by remember { mutableStateOf("") }
     var seatCount    by remember { mutableIntStateOf(1) }
     var sortBy       by remember { mutableStateOf(SortOption.TIME) }
@@ -170,7 +172,15 @@ fun SearchRoutesScreen(
     // ── Search logic — calls ViewModel which hits Supabase ────────────────────
     fun doSearch() {
         hasSearched = true
-        routeVm.searchRoutes(originQuery, destQuery, seatCount)
+        focusManager.clearFocus()
+        routeVm.clearSuggestions()
+        activeField = null
+        // Convert display date "DD / MM / YYYY" → DB format "YYYY-MM-DD"
+        val dbDate = if (selectedDate.isNotBlank()) {
+            val parts = selectedDate.split(" / ")
+            if (parts.size == 3) "${parts[2]}-${parts[1]}-${parts[0]}" else ""
+        } else ""
+        routeVm.searchRoutes(originQuery, destQuery, dbDate, seatCount)
     }
 
     // Map Supabase results → UI model with client-side filter/sort
@@ -289,7 +299,12 @@ fun SearchRoutesScreen(
                         // Origin field
                         SearchInputField(
                             value           = originQuery,
-                            onValueChange   = { originQuery = it },
+                            onValueChange   = {
+                                originQuery = it
+                                activeField = "origin"
+                                if (it.length >= 2) routeVm.suggestPlaces(it)
+                                else routeVm.clearSuggestions()
+                            },
                             placeholder     = "From — e.g. Shimla",
                             leadingEmoji    = "📍",
                             focusRequester  = focusRequester,
@@ -310,6 +325,47 @@ fun SearchRoutesScreen(
                             }} else null
                         )
 
+                        // Autocomplete dropdown
+                        if (suggestions.isNotEmpty() && activeField != null) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(PahadiRaahShapes.medium)
+                                    .background(SurfaceLow)
+                                    .border(1.dp, BorderSubtle, PahadiRaahShapes.medium)
+                            ) {
+                                suggestions.forEach { place ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                when (activeField) {
+                                                    "origin" -> originQuery = place
+                                                    "dest"   -> destQuery   = place
+                                                }
+                                                routeVm.clearSuggestions()
+                                                activeField = null
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    ) {
+                                        Text("📍", fontSize = 14.sp)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(
+                                            text  = place,
+                                            style = PahadiRaahTypography.bodyMedium.copy(color = SnowPeak)
+                                        )
+                                    }
+                                    if (suggestions.last() != place)
+                                        Divider(color = BorderGhost, thickness = 0.5.dp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
                         Spacer(modifier = Modifier.height(1.dp))
 
                         // Gradient connector
@@ -329,7 +385,12 @@ fun SearchRoutesScreen(
                         // Destination field
                         SearchInputField(
                             value           = destQuery,
-                            onValueChange   = { destQuery = it },
+                            onValueChange   = {
+                                destQuery = it
+                                activeField = "dest"
+                                if (it.length >= 2) routeVm.suggestPlaces(it)
+                                else routeVm.clearSuggestions()
+                            },
                             placeholder     = "To — e.g. Manali",
                             leadingEmoji    = "🏁",
                             onSearch        = { doSearch() },

@@ -69,13 +69,19 @@ val quickTags = listOf(
 
 @Composable
 fun RateReviewScreen(
-    bookingId: String,
-    driverId:  String,
-    onBack:    () -> Unit,
-    onDone:    () -> Unit,
-    reviewVm:  ReviewViewModel = hiltViewModel()
+    bookingId:   String,
+    routeId:     String,
+    driverId:    String,
+    driverName:  String,
+    driverEmoji: String,
+    onBack:      () -> Unit,
+    onDone:      () -> Unit,
+    reviewVm:    ReviewViewModel = hiltViewModel()
 ) {
     val submitResult by reviewVm.submitResult.collectAsStateWithLifecycle()
+
+    // Reset state when leaving so re-entry starts fresh
+    DisposableEffect(Unit) { onDispose { reviewVm.resetSubmitResult() } }
 
     // ── State ─────────────────────────────────────────────────────────────────
     var overallRating by remember { mutableIntStateOf(0) }
@@ -83,8 +89,24 @@ fun RateReviewScreen(
     var selectedTags  by remember { mutableStateOf(setOf<String>()) }
     var reviewText    by remember { mutableStateOf("") }
 
-    val showSuccess = submitResult is ActionResult.Success
-    val canSubmit   = overallRating > 0
+    val showSuccess  = submitResult is ActionResult.Success
+    val isSubmitting = submitResult is ActionResult.Loading
+    val submitError  = (submitResult as? ActionResult.Error)?.message
+
+    // All 5 aspects must be rated
+    val allAspectsRated = aspectRatings.values.all { it > 0 }
+    // At least 1 tag selected
+    val hasTag          = selectedTags.isNotEmpty()
+    // Button enables only when: overall rated + all aspects rated + at least 1 tag + not submitting
+    val canSubmit       = overallRating > 0 && allAspectsRated && hasTag && !isSubmitting
+
+    // Hint shown under button explaining what's still missing
+    val missingHint = when {
+        overallRating == 0        -> "⭐ Tap the stars to give an overall rating"
+        !allAspectsRated          -> "Rate all 5 aspects (Driving, Punctuality…)"
+        !hasTag                   -> "Select at least one quick tag"
+        else                      -> null
+    }
 
     // ── Entrance ──────────────────────────────────────────────────────────────
     var started by remember { mutableStateOf(false) }
@@ -168,7 +190,15 @@ fun RateReviewScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 // ── DRIVER SUMMARY ────────────────────────────────────────────
-                DriverSummaryCard()
+                DriverSummaryCard(
+                    driverName   = driverName,
+                    driverEmoji  = driverEmoji,
+                    driverRating = 0.0,
+                    origin       = "",
+                    destination  = "",
+                    date         = "",
+                    time         = ""
+                )
 
                 // ── OVERALL STAR RATING ───────────────────────────────────────
                 OverallRatingSection(
@@ -215,24 +245,30 @@ fun RateReviewScreen(
                     .navigationBarsPadding()
             ) {
                 SubmitReviewButton(
-                    enabled = canSubmit,
-                    rating  = overallRating,
-                    onClick = {
+                    enabled     = canSubmit,
+                    isLoading   = isSubmitting,
+                    rating      = overallRating,
+                    onClick     = {
                         reviewVm.submitReview(
                             bookingId     = bookingId,
-                            driverId      = driverId,
+                            routeId       = routeId,
+                            driverIdHint  = driverId,
                             overallRating = overallRating,
-                            aspectRatings = aspectRatings.mapValues { it.value },
+                            aspectRatings = aspectRatings,
                             tags          = selectedTags.toList(),
                             comment       = reviewText
                         )
                     }
                 )
-                if (!canSubmit) {
+                val feedbackText = submitError?.let { "⚠ $it" } ?: missingHint
+                if (feedbackText != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Tap the stars above to rate your trip",
-                        style     = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.4f), fontSize = 11.sp),
+                        feedbackText,
+                        style     = PahadiRaahTypography.bodySmall.copy(
+                            color    = if (submitError != null) StatusError else Sage.copy(alpha = 0.5f),
+                            fontSize = 11.sp
+                        ),
                         textAlign = TextAlign.Center,
                         modifier  = Modifier.fillMaxWidth()
                     )
@@ -247,7 +283,15 @@ fun RateReviewScreen(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun DriverSummaryCard() {
+fun DriverSummaryCard(
+    driverName:   String,
+    driverEmoji:  String,
+    driverRating: Double,
+    origin:       String,
+    destination:  String,
+    date:         String,
+    time:         String
+) {
     Row(
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -265,15 +309,43 @@ fun DriverSummaryCard() {
                 .background(Snow.copy(alpha = 0.12f))
                 .border(2.dp, Snow.copy(alpha = 0.2f), PahadiRaahShapes.medium)
         ) {
-            Text("🧔", fontSize = 28.sp)
+            Text(driverEmoji.ifBlank { "🧑" }, fontSize = 28.sp)
         }
 
         Column(Modifier.weight(1f)) {
-            Text("Ramesh Kumar", style = PahadiRaahTypography.titleMedium.copy(color = Snow))
+            Text(
+                driverName.ifBlank { "Driver" },
+                style = PahadiRaahTypography.titleMedium.copy(color = Snow)
+            )
             Spacer(Modifier.height(3.dp))
-            Text("Shimla → Manali", style = PahadiRaahTypography.bodySmall.copy(color = Snow.copy(alpha = 0.65f), fontSize = 12.sp))
-            Spacer(Modifier.height(3.dp))
-            Text("📅 Jun 22, 2025  •  🕐 6:00 AM", style = PahadiRaahTypography.bodySmall.copy(color = Snow.copy(alpha = 0.5f), fontSize = 10.sp))
+            if (origin.isNotBlank() && destination.isNotBlank()) {
+                Text(
+                    "$origin → $destination",
+                    style    = PahadiRaahTypography.bodySmall.copy(color = Snow.copy(alpha = 0.65f), fontSize = 12.sp),
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(3.dp))
+            }
+            val dateLabel = buildString {
+                if (date.isNotBlank()) append("📅 $date")
+                if (time.isNotBlank()) {
+                    if (isNotEmpty()) append("  •  ")
+                    append("🕐 $time")
+                }
+            }
+            if (dateLabel.isNotBlank()) {
+                Text(
+                    dateLabel,
+                    style = PahadiRaahTypography.bodySmall.copy(color = Snow.copy(alpha = 0.5f), fontSize = 10.sp)
+                )
+            }
+            if (driverRating > 0) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "⭐ ${String.format("%.1f", driverRating)}",
+                    style = PahadiRaahTypography.bodySmall.copy(color = Gold.copy(alpha = 0.85f), fontSize = 11.sp)
+                )
+            }
         }
 
         Text("🏔️", fontSize = 36.sp, modifier = Modifier.alpha(0.45f))
@@ -534,7 +606,7 @@ fun WrittenReviewSection(text: String, onChange: (String) -> Unit) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun SubmitReviewButton(enabled: Boolean, rating: Int, onClick: () -> Unit) {
+fun SubmitReviewButton(enabled: Boolean, isLoading: Boolean, rating: Int, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -564,13 +636,21 @@ fun SubmitReviewButton(enabled: Boolean, rating: Int, onClick: () -> Unit) {
                 onClick           = onClick
             )
     ) {
-        Text(
-            text  = if (enabled) "$stars  Submit Review" else "Rate to continue",
-            style = PahadiRaahTypography.labelLarge.copy(
-                color    = if (enabled) Pine else Sage.copy(alpha = 0.3f),
-                fontSize = 15.sp
+        if (isLoading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier  = Modifier.size(22.dp),
+                color     = Pine,
+                strokeWidth = 2.5.dp
             )
-        )
+        } else {
+            Text(
+                text  = if (enabled) "$stars  Submit Review" else "Rate to continue",
+                style = PahadiRaahTypography.labelLarge.copy(
+                    color    = if (enabled) Pine else Sage.copy(alpha = 0.3f),
+                    fontSize = 15.sp
+                )
+            )
+        }
     }
 }
 
@@ -665,5 +745,5 @@ fun ReviewSuccessOverlay(rating: Int, onDone: () -> Unit) {
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun RateReviewPreview() {
-    PahadiRaahTheme { RateReviewScreen(bookingId = "1", driverId = "d1", onBack = {}, onDone = {}) }
+    PahadiRaahTheme { RateReviewScreen(bookingId = "1", routeId = "", driverId = "", driverName = "Driver", driverEmoji = "🧑", onBack = {}, onDone = {}) }
 }

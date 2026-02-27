@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.kunpitech.pahadiraah.data.model.*
 import com.kunpitech.pahadiraah.data.repository.AuthRepository
 import com.kunpitech.pahadiraah.data.repository.ReviewRepository
+import com.kunpitech.pahadiraah.data.repository.RouteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -13,6 +14,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ReviewViewModel @Inject constructor(
     private val reviewRepo: ReviewRepository,
+    private val routeRepo:  RouteRepository,
     private val authRepo:   AuthRepository
 ) : ViewModel() {
 
@@ -34,8 +36,9 @@ class ReviewViewModel @Inject constructor(
     val submitResult: StateFlow<ActionResult> = _submitResult.asStateFlow()
 
     fun submitReview(
-        bookingId:     String,
-        driverId:      String,
+        bookingId:    String,
+        routeId:      String,   // used to resolve driverId from DB when hint is blank
+        driverIdHint: String,   // pass whatever is already known — may be blank
         overallRating: Int,
         aspectRatings: Map<String, Int>,
         tags:          List<String>,
@@ -47,6 +50,20 @@ class ReviewViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _submitResult.value = ActionResult.Loading
+
+            // Resolve driverId — use hint if valid, otherwise fetch route from DB
+            val driverId = when {
+                driverIdHint.isNotBlank() -> driverIdHint
+                routeId.isNotBlank()      -> routeRepo.getRouteById(routeId)
+                    .getOrNull()?.driverId ?: ""
+                else                      -> ""
+            }
+
+            if (driverId.isBlank()) {
+                _submitResult.value = ActionResult.Error("Could not identify driver. Please try again.")
+                return@launch
+            }
+
             reviewRepo.submitReview(
                 NewReview(
                     bookingId     = bookingId,

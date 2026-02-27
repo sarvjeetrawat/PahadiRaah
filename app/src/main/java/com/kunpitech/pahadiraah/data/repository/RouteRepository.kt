@@ -14,7 +14,10 @@ import javax.inject.Inject
 
 interface RouteRepository {
     /** Passenger: search available routes by origin/destination keywords. */
-    suspend fun searchRoutes(origin: String, destination: String, minSeats: Int = 1): Result<List<RouteDto>>
+    suspend fun searchRoutes(origin: String, destination: String, date: String = "", minSeats: Int = 1): Result<List<RouteDto>>
+
+    /** Autocomplete: distinct place names matching query (from routes table) */
+    suspend fun suggestPlaces(query: String): Result<List<String>>
 
     /** Driver: get all routes posted by this driver. */
     suspend fun getMyRoutes(driverId: String): Result<List<RouteDto>>
@@ -47,13 +50,14 @@ class RouteRepositoryImpl @Inject constructor(
 ) : RouteRepository {
 
     // Join driver info into each route for display
-    private val routeColumns = Columns.raw("*, users!driver_id(id, name, emoji, avg_rating, is_online)")
+    private val routeColumns = Columns.raw("*,users!routes_driver_id_fkey(id,name,emoji,avg_rating,is_online)")
 
     private val table get() = client.postgrest["routes"]
 
     override suspend fun searchRoutes(
         origin:      String,
         destination: String,
+        date:        String,
         minSeats:    Int
     ): Result<List<RouteDto>> = runCatching {
         table
@@ -63,6 +67,8 @@ class RouteRepositoryImpl @Inject constructor(
                         ilike("origin", "%$origin%")
                     if (destination.isNotBlank())
                         ilike("destination", "%$destination%")
+                    if (date.isNotBlank())
+                        eq("date", date)
                     eq("status", "upcoming")
                     gte("seats_left", minSeats)
                 }
@@ -138,4 +144,31 @@ class RouteRepositoryImpl @Inject constructor(
 
     override suspend fun cancelRoute(routeId: String): Result<Unit> =
         updateRouteStatus(routeId, "cancelled")
+    override suspend fun suggestPlaces(query: String): Result<List<String>> = runCatching {
+        if (query.length < 2) return@runCatching emptyList()
+
+        @kotlinx.serialization.Serializable
+        data class PlaceRow(val origin: String = "", val destination: String = "")
+
+        val rows = table
+            .select(Columns.raw("origin,destination")) {
+                filter {
+                    or {
+                        ilike("origin", "%$query%")
+                        ilike("destination", "%$query%")
+                    }
+                }
+                limit(20)
+            }
+            .decodeList<PlaceRow>()
+
+        // Collect matching place names, deduplicate, sort
+        val places = mutableSetOf<String>()
+        rows.forEach { row ->
+            if (row.origin.contains(query, ignoreCase = true)) places.add(row.origin)
+            if (row.destination.contains(query, ignoreCase = true)) places.add(row.destination)
+        }
+        places.filter { it.isNotBlank() }.sortedBy { it }.take(8)
+    }
+
 }

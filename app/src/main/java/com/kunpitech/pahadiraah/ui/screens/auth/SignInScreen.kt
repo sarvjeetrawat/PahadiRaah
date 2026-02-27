@@ -50,9 +50,10 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun SignInScreen(
-    onNavigateToOtp: (email: String) -> Unit,
-    onNavigateBack: () -> Unit,
-    viewModel: AuthViewModel = hiltViewModel()
+    onNavigateToOtp:        (email: String) -> Unit,
+    onGoogleSignInSuccess:  (isNewUser: Boolean) -> Unit,
+    onNavigateBack:         () -> Unit,
+    viewModel:              AuthViewModel = hiltViewModel()
 ) {
     var email by remember { mutableStateOf("") }
     var emailFocused by remember { mutableStateOf(false) }
@@ -62,6 +63,10 @@ fun SignInScreen(
     val otpResult by viewModel.otpResult.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+    val context       = androidx.compose.ui.platform.LocalContext.current
+
+    val googleResult by viewModel.googleResult.collectAsStateWithLifecycle()
+    val isNewGoogleUser by viewModel.isNewGoogleUser.collectAsStateWithLifecycle()
 
     // ── Entrance animations ───────────────────────────────────────────────────
     val bgAlpha      by animateFloatAsState(if (started) 1f else 0f, tween(500), label = "bg")
@@ -93,6 +98,19 @@ fun SignInScreen(
             is ActionResult.Success -> {
                 viewModel.resetOtpResult()
                 onNavigateToOtp(email.trim())
+            }
+            is ActionResult.Error -> {
+                emailError = result.message
+            }
+            else -> {}
+        }
+    }
+
+    LaunchedEffect(googleResult) {
+        when (val result = googleResult) {
+            is ActionResult.Success -> {
+                viewModel.resetGoogleResult()
+                onGoogleSignInSuccess(isNewGoogleUser)
             }
             is ActionResult.Error -> {
                 emailError = result.message
@@ -285,6 +303,19 @@ fun SignInScreen(
                     text      = if (otpResult is ActionResult.Loading) "" else "Send Code  →",
                     isLoading = otpResult is ActionResult.Loading,
                     onClick   = { validateAndSend() }
+                )
+
+                Spacer(modifier = Modifier.height(Dimens.SpaceLG))
+
+                // ── Or divider ────────────────────────────────────────────────
+                AuthOrDivider()
+
+                Spacer(modifier = Modifier.height(Dimens.SpaceLG))
+
+                // ── Google Sign-In button ─────────────────────────────────────
+                GoogleSignInButton(
+                    isLoading = googleResult is ActionResult.Loading,
+                    onClick   = { viewModel.signInWithGoogle(context) }
                 )
 
                 Spacer(modifier = Modifier.height(Dimens.SpaceLG))

@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.data.model.UserDto
 import com.kunpitech.pahadiraah.data.repository.AuthRepository
+import com.kunpitech.pahadiraah.data.repository.VehicleRepository
+import com.kunpitech.pahadiraah.data.model.VehicleDto
 import com.kunpitech.pahadiraah.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -13,13 +15,18 @@ import javax.inject.Inject
 
 @HiltViewModel
 class UserViewModel @Inject constructor(
-    private val userRepo: UserRepository,
-    private val authRepo: AuthRepository
+    private val userRepo:    UserRepository,
+    private val authRepo:    AuthRepository,
+    private val vehicleRepo: VehicleRepository
 ) : ViewModel() {
 
     // ── My Profile ────────────────────────────────────────────────────────────
     private val _myProfile = MutableStateFlow<UiState<UserDto>>(UiState.Idle)
     val myProfile: StateFlow<UiState<UserDto>> = _myProfile.asStateFlow()
+
+    // ── My Vehicle ───────────────────────────────────────────────────────────
+    private val _myVehicle = MutableStateFlow<VehicleDto?>(null)
+    val myVehicle: StateFlow<VehicleDto?> = _myVehicle.asStateFlow()
 
     fun loadMyProfile() {
         val uid = authRepo.currentUserId() ?: return
@@ -72,5 +79,12 @@ class UserViewModel @Inject constructor(
 
     fun initOnlineStatus(currentValue: Boolean) {
         _isOnline.value = currentValue
+    }
+
+    fun loadMyVehicle() {
+        val uid = authRepo.currentUserId() ?: return
+        viewModelScope.launch {
+            vehicleRepo.getDriverVehicle(uid).onSuccess { _myVehicle.value = it }
+        }
     }
 }

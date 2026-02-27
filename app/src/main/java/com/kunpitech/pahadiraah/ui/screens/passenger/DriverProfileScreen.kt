@@ -131,7 +131,23 @@ fun DriverProfileScreen(
 
     // ── Map to UI models ──────────────────────────────────────────────────────
     val driver: UserDto? = (profileState as? UiState.Success)?.data
+    // Filter to strictly future-departing routes before mapping to UI models.
+    // loadDriverUpcomingRoutes already guards at ViewModel level, but this is
+    // a second client-side check in case of stale cached data.
     val upcomingTrips = (routesState as? UiState.Success)?.data
+        ?.filter { route ->
+            try {
+                val depDate = java.time.LocalDate.parse(route.date)
+                val parts   = route.time.split(":").map { it.toIntOrNull() ?: 0 }
+                val depTime = java.time.LocalTime.of(
+                    parts.getOrElse(0) { 0 },
+                    parts.getOrElse(1) { 0 },
+                    parts.getOrElse(2) { 0 }
+                )
+                java.time.LocalDateTime.of(depDate, depTime)
+                    .isAfter(java.time.LocalDateTime.now())
+            } catch (e: Exception) { false }
+        }
         ?.map { it.toUpcomingTrip() } ?: emptyList()
     val reviews = (reviewsState as? UiState.Success)?.data
         ?.map { it.toDriverReview() } ?: emptyList()

@@ -75,7 +75,8 @@ class UserRepositoryImpl @Inject constructor(
             .select(Columns.ALL) {
                 filter {
                     eq("id", driverId)
-                    eq("role", "driver")
+                    // Note: no role filter — fetch by ID regardless of role
+                    // so BookingViewModel can enrich bookings with any driver's info
                 }
                 limit(1)
             }

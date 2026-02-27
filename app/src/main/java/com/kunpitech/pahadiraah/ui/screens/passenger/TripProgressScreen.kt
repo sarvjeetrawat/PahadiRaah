@@ -76,7 +76,7 @@ data class LiveTrip(
 fun TripProgressScreen(
     bookingId:   String,
     onBack:      () -> Unit,
-    onRateTrip:  (String, String) -> Unit,
+    onRateTrip:  (bookingId: String, routeId: String, driverId: String, driverName: String, driverEmoji: String) -> Unit,
     bookingVm:   BookingViewModel  = hiltViewModel(),
     locationVm:  LocationViewModel = hiltViewModel()
 ) {
@@ -459,7 +459,15 @@ fun TripProgressScreen(
 
             // Rate trip button (only if progress >= 100%)
             if (trip.progressFrac >= 1f) {
-                RateTripButton(onClick = { onRateTrip(bookingId, trip.driverEmoji) })
+                RateTripButton(onClick = {
+                    onRateTrip(
+                        bookingId,
+                        booking?.routeId ?: "",
+                        booking?.routes?.driverId ?: "",
+                        trip.driverName,
+                        trip.driverEmoji
+                    )
+                })
             } else {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -637,5 +645,5 @@ fun RateTripButton(onClick: () -> Unit) {
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun TripProgressPreview() {
-    PahadiRaahTheme { TripProgressScreen(bookingId = "1", onBack = {}, onRateTrip = { _, _ -> }) }
+    PahadiRaahTheme { TripProgressScreen(bookingId = "1", onBack = {}, onRateTrip = { _, _, _, _, _ -> }) }
 }

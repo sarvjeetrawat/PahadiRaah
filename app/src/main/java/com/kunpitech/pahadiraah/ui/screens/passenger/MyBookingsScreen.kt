@@ -54,6 +54,7 @@ data class MyBooking(
     val driverName:   String,
     val driverEmoji:  String,
     val driverRating: Float,
+    val routeId:      String  = "",
     val driverId:     String  = "",
     val seats:        Int,
     val fare:         String,
@@ -92,23 +93,31 @@ private fun BookingDto.toMyBooking() = MyBooking(
     driverRating = routes?.users?.avgRating?.toFloat() ?: 0f,
     seats        = seats,
     fare         = "₹$grandTotal",
-    status       = when (status) {
+    status       = when (routes?.status ?: status) {
         "upcoming"  -> MyBookingStatus.UPCOMING
         "ongoing"   -> MyBookingStatus.ONGOING
+        "completed" -> MyBookingStatus.COMPLETED
         "cancelled" -> MyBookingStatus.CANCELLED
+        // booking-level fallbacks
+        "pending"   -> MyBookingStatus.UPCOMING
+        "accepted"  -> MyBookingStatus.UPCOMING
         else        -> MyBookingStatus.COMPLETED
     },
-    vehicle      = routes?.vehicleId ?: "Vehicle",
+    vehicle      = listOfNotNull(
+        routes?.vehicles?.model?.ifBlank { null },
+        routes?.vehicles?.regNumber?.ifBlank { null }
+    ).joinToString(" • ").ifBlank { "Vehicle" },
     bookingRef   = "#$bookingRef",
     hasReview    = hasReview,
-    driverId     = routes?.driverId ?: ""
+    driverId     = routes?.driverId ?: "",
+    routeId      = routeId,
 )
 
 @Composable
 fun MyBookingsScreen(
     onBack:       () -> Unit,
     onTrackTrip:  (String) -> Unit,
-    onRateTrip:   (String, String) -> Unit,
+    onRateTrip:   (bookingId: String, routeId: String, driverId: String, driverName: String, driverEmoji: String) -> Unit,
     bookingVm:    BookingViewModel = hiltViewModel()
 ) {
     val bookingsState by bookingVm.myBookings.collectAsStateWithLifecycle()
@@ -280,7 +289,7 @@ fun MyBookingsScreen(
                                 onToggle   = { expandedId = if (expandedId == booking.id) null else booking.id },
                                 onTrack    = { onTrackTrip(booking.id) },
                                 onReview   = {
-                                    onRateTrip(booking.id, booking.driverId)
+                                    onRateTrip(booking.id, booking.routeId, booking.driverId, booking.driverName, booking.driverEmoji)
                                 }
                             )
                         }
@@ -617,5 +626,5 @@ fun BookingEmptyState(tab: BookingTab, modifier: Modifier = Modifier) {
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 fun MyBookingsPreview() {
-    PahadiRaahTheme { MyBookingsScreen(onBack = {}, onTrackTrip = {}, onRateTrip = { _, _ -> }) }
+    PahadiRaahTheme { MyBookingsScreen(onBack = {}, onTrackTrip = {}, onRateTrip = { _, _, _, _, _ -> }) }
 }

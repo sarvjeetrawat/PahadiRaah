@@ -1,5 +1,6 @@
 package com.kunpitech.pahadiraah.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunpitech.pahadiraah.data.model.ActionResult
@@ -17,30 +18,37 @@ class AuthViewModel @Inject constructor(
     private val userRepo: UserRepository
 ) : ViewModel() {
 
-    // ── OTP flow state ────────────────────────────────────────────────────────
-    private val _otpResult  = MutableStateFlow<ActionResult>(ActionResult.Idle)
+    // ── OTP flow ──────────────────────────────────────────────────────────────
+    private val _otpResult    = MutableStateFlow<ActionResult>(ActionResult.Idle)
     val otpResult: StateFlow<ActionResult> = _otpResult.asStateFlow()
 
     private val _verifyResult = MutableStateFlow<ActionResult>(ActionResult.Idle)
     val verifyResult: StateFlow<ActionResult> = _verifyResult.asStateFlow()
 
-    // ── Current user (null = not logged in) ───────────────────────────────────
+    // ── Google Sign-In ────────────────────────────────────────────────────────
+    private val _googleResult = MutableStateFlow<ActionResult>(ActionResult.Idle)
+    val googleResult: StateFlow<ActionResult> = _googleResult.asStateFlow()
+
+    /** Set to true when Google sign-in succeeds for a brand-new user (no role yet). */
+    private val _isNewGoogleUser = MutableStateFlow(false)
+    val isNewGoogleUser: StateFlow<Boolean> = _isNewGoogleUser.asStateFlow()
+
+    // ── Current user ──────────────────────────────────────────────────────────
     val currentUser: StateFlow<UserInfo?> = authRepo
         .authStateFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), authRepo.currentUser())
 
-    // Convenience: is someone logged in right now?
+    val authState: StateFlow<UserInfo?> = currentUser  // alias for NavGraph clarity
+
     val isLoggedIn: Boolean get() = authRepo.currentUserId() != null
     val userId:     String? get() = authRepo.currentUserId()
 
-    // ── Role (loaded from public.users after login) ───────────────────────────
-    private val _role = MutableStateFlow<String?>(null)   // "driver" | "passenger"
+    // ── Role ──────────────────────────────────────────────────────────────────
+    private val _role = MutableStateFlow<String?>(null)
     val role: StateFlow<String?> = _role.asStateFlow()
 
     init {
-        // Watch auth state — load role whenever a session becomes available.
-        // We cannot call currentUserId() synchronously at init because Supabase
-        // hasn't restored the session from storage yet; the flow is the source of truth.
+        // Load role automatically whenever a session is established
         viewModelScope.launch {
             currentUser.collect { user ->
                 if (user != null && _role.value == null) {
@@ -88,13 +96,55 @@ class AuthViewModel @Inject constructor(
     fun resetVerifyResult() { _verifyResult.value = ActionResult.Idle }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  SET ROLE (first time user picks driver / passenger)
+    //  GOOGLE SIGN-IN
     // ─────────────────────────────────────────────────────────────────────────
 
-    fun setRole(name: String, role: String) {
+    fun signInWithGoogle(context: Context) {
+        viewModelScope.launch {
+            _googleResult.value = ActionResult.Loading
+            authRepo.signInWithGoogle(context)
+                .onSuccess { result ->
+                    _isNewGoogleUser.value = result.isNew
+                    if (!result.isNew) {
+                        // Returning user — load their existing role
+                        loadRole(result.user.id)
+                    }
+                    _googleResult.value = ActionResult.Success
+                }
+                .onFailure { e ->
+                    val msg = when {
+                        e.message?.contains("cancel", ignoreCase = true) == true ->
+                            "Sign-in cancelled"
+                        e.message?.contains("network", ignoreCase = true) == true ||
+                                e.message?.contains("unable to resolve", ignoreCase = true) == true ->
+                            "No internet connection"
+                        else -> e.message ?: "Google sign-in failed"
+                    }
+                    _googleResult.value = ActionResult.Error(msg)
+                }
+        }
+    }
+
+    fun resetGoogleResult() { _googleResult.value = ActionResult.Idle }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  SET ROLE  (first-time user picks driver / passenger after Google sign-in)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Called after Google sign-in when a new user picks their role.
+     * Writes name + role + email + emoji into public.users so the
+     * profile screen shows the correct data immediately.
+     */
+    fun setRole(
+        name:  String,
+        role:  String,
+        email: String? = null,   // Google account email
+        emoji: String  = "\ud83e\uddd1"  // default 🧑 avatar
+    ) {
         val uid = userId ?: return
         viewModelScope.launch {
-            authRepo.updateProfile(uid, name, role)
+            authRepo.updateProfile(uid, name, role, email, emoji)
                 .onSuccess { _role.value = role }
         }
     }
@@ -106,7 +156,8 @@ class AuthViewModel @Inject constructor(
     fun signOut() {
         viewModelScope.launch {
             authRepo.signOut()
-            _role.value = null
+            _role.value            = null
+            _isNewGoogleUser.value = false
         }
     }
 

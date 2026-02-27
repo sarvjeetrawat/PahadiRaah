@@ -60,7 +60,7 @@ fun PassengerDashboardScreen(
     LaunchedEffect(Unit) {
         userViewModel.loadMyProfile()
         userViewModel.loadAllDrivers()
-        routeViewModel.searchRoutes("", "", 1)
+        routeViewModel.searchRoutes("", "", "", 1)
     }
 
     val profile  = (profileState as? UiState.Success<UserDto>)?.data

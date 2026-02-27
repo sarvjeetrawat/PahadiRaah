@@ -70,6 +70,9 @@ fun PostRouteScreen(
 ) {
     val context     = LocalContext.current
     val postResult  by routeViewModel.postResult.collectAsStateWithLifecycle()
+    val myVehicle   by userViewModel.myVehicle.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { userViewModel.loadMyVehicle() }
 
     // ── Form state ────────────────────────────────────────────────────────────
     var origin          by remember { mutableStateOf("") }
@@ -371,7 +374,8 @@ fun PostRouteScreen(
                             time        = rawTime,
                             durationHrs = durationHrs,
                             seatsTotal  = seats,
-                            farePerSeat = price.toInt()
+                            farePerSeat = price.toInt(),
+                            vehicleId   = myVehicle?.id
                         )
                     }
                 )

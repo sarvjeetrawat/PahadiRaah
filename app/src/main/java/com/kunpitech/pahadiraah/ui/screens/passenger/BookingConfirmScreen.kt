@@ -119,6 +119,23 @@ fun BookingConfirmScreen(
 
     val maxSeats = (route?.seatsLeft ?: 4).coerceAtLeast(1)
 
+    // ── Departure guard — true when the trip has already departed ─────────────
+    // Checked against now() each recomposition so it stays accurate even if the
+    // screen is left open past midnight.
+    val isDeparted = remember(route) {
+        val r = route ?: return@remember false
+        try {
+            val depDate = java.time.LocalDate.parse(r.date)
+            val parts   = r.time.split(":").map { it.toIntOrNull() ?: 0 }
+            val depTime = java.time.LocalTime.of(
+                parts.getOrElse(0) { 0 },
+                parts.getOrElse(1) { 0 },
+                parts.getOrElse(2) { 0 }
+            )
+            java.time.LocalDateTime.of(depDate, depTime).isBefore(java.time.LocalDateTime.now())
+        } catch (e: Exception) { false }
+    }
+
     val booking = remember(route) {
         route?.let { r ->
             BookingSummary(
@@ -188,6 +205,7 @@ fun BookingConfirmScreen(
     // In edit mode, seats must be > existing seats (adding more only)
     val minSeats         = if (isEditMode) (existingBooking?.seats ?: 1) + 1 else 1
     val isReady          = agreedToTerms && !isBookingLoading && route != null &&
+            !isDeparted &&   // block booking if trip already departed
             (!isEditMode || seats >= minSeats)
     val showSuccess      = confirmResult is ActionResult.Success
 
@@ -520,6 +538,46 @@ fun BookingConfirmScreen(
                 }
 
                 // Confirm / Update button
+                // ── Departed warning — shown instead of confirm when trip is gone ─────
+                if (isDeparted) {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = androidx.compose.ui.Modifier
+                            .fillMaxWidth()
+                            .clip(com.kunpitech.pahadiraah.ui.theme.PahadiRaahShapes.medium)
+                            .background(com.kunpitech.pahadiraah.ui.theme.StatusError.copy(alpha = 0.10f))
+                            .border(
+                                1.dp,
+                                com.kunpitech.pahadiraah.ui.theme.StatusError.copy(alpha = 0.35f),
+                                com.kunpitech.pahadiraah.ui.theme.PahadiRaahShapes.medium
+                            )
+                            .padding(16.dp)
+                    ) {
+                        androidx.compose.foundation.layout.Column(
+                            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                            modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                        ) {
+                            Text("🚫", fontSize = 28.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "This trip has already departed",
+                                style     = com.kunpitech.pahadiraah.ui.theme.PahadiRaahTypography
+                                    .titleSmall.copy(color = com.kunpitech.pahadiraah.ui.theme.StatusError),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Bookings are closed. Please search for another route.",
+                                style     = com.kunpitech.pahadiraah.ui.theme.PahadiRaahTypography
+                                    .bodySmall.copy(
+                                        color     = com.kunpitech.pahadiraah.ui.theme.MistVeil,
+                                        fontSize  = 12.sp
+                                    ),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
                 ConfirmBookingButton(
                     enabled   = isReady,
                     isLoading = isBookingLoading,

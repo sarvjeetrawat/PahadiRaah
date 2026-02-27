@@ -1,6 +1,8 @@
 package com.kunpitech.pahadiraah.data.repository
 
 import com.kunpitech.pahadiraah.data.model.BookingDto
+import com.kunpitech.pahadiraah.data.model.UserDto
+import com.kunpitech.pahadiraah.data.model.VehicleDto
 import com.kunpitech.pahadiraah.data.model.NewBooking
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
@@ -81,10 +83,9 @@ class BookingRepositoryImpl @Inject constructor(
 
     // Columns: join route and passenger user info
     private val bookingColumns = Columns.raw(
-        "*, " +
-                "routes(id, driver_id, origin, destination, date, time, duration_hrs, fare_per_seat, vehicle_id, " +
-                "  users!driver_id(id, name, emoji, avg_rating)), " +
-                "users!passenger_id(id, name, emoji, avg_rating, total_trips)"
+        "*," +
+                "routes(id,driver_id,origin,destination,date,time,duration_hrs,fare_per_seat,vehicle_id,status)," +
+                "users!passenger_id(id,name,emoji,avg_rating,total_trips)"
     )
 
     private val table get() = client.postgrest["bookings"]
@@ -97,12 +98,49 @@ class BookingRepositoryImpl @Inject constructor(
 
     override suspend fun getMyBookings(passengerId: String): Result<List<BookingDto>> =
         runCatching {
-            table
+            // Step 1: fetch bookings with plain routes join (no FK hints — avoids PostgREST failures)
+            val bookings = table
                 .select(bookingColumns) {
                     filter { eq("passenger_id", passengerId) }
                     order("created_at", Order.DESCENDING)
                 }
                 .decodeList<BookingDto>()
+
+            if (bookings.isEmpty()) return@runCatching bookings
+
+            // Step 2: collect IDs for batch lookups
+            val driverIds  = bookings.mapNotNull { it.routes?.driverId?.takeIf(String::isNotBlank) }.distinct()
+            val vehicleIds = bookings.mapNotNull { it.routes?.vehicleId?.takeIf(String::isNotBlank) }.distinct()
+            android.util.Log.d("BookingRepo", "bookings=${bookings.size} routes=${bookings.count{it.routes!=null}} driverIds=$driverIds vehicleIds=$vehicleIds")
+            bookings.take(2).forEach { b -> android.util.Log.d("BookingRepo", "  booking ${b.id.take(8)} routeId=${b.routeId} routes=${b.routes?.id?.take(8)} driverId=${b.routes?.driverId?.take(8)} vehicleId=${b.routes?.vehicleId?.take(8)}") }
+
+            // Step 3: batch fetch drivers
+            val driverMap: Map<String, UserDto> = if (driverIds.isNotEmpty()) {
+                client.postgrest["users"]
+                    .select(Columns.raw("id,name,emoji,avg_rating")) {
+                        filter { isIn("id", driverIds) }
+                    }
+                    .decodeList<UserDto>()
+                    .associateBy { it.id }
+            } else emptyMap()
+
+            // Step 4: batch fetch vehicles
+            val vehicleMap: Map<String, VehicleDto> = if (vehicleIds.isNotEmpty()) {
+                client.postgrest["vehicles"]
+                    .select(Columns.raw("id,type,model,reg_number")) {
+                        filter { isIn("id", vehicleIds) }
+                    }
+                    .decodeList<VehicleDto>()
+                    .associateBy { it.id }
+            } else emptyMap()
+
+            // Step 5: assemble
+            bookings.map { booking ->
+                val route   = booking.routes ?: return@map booking
+                val driver  = driverMap[route.driverId]
+                val vehicle = vehicleMap[route.vehicleId ?: ""]
+                booking.copy(routes = route.copy(users = driver, vehicles = vehicle))
+            }
         }
 
     override suspend fun getBookingsForRoute(routeId: String): Result<List<BookingDto>> {

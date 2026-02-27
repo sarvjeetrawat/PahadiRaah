@@ -119,6 +119,8 @@ data class RouteDto(
     val createdAt:      String? = null,
     // joined driver info
     val users:          UserDto?            = null,
+    // joined vehicle info
+    val vehicles:       VehicleDto?         = null,
     // joined bookings with passenger info — uses RouteBookingDto to avoid circular ref
     val bookings:       List<RouteBookingDto> = emptyList()
 )
