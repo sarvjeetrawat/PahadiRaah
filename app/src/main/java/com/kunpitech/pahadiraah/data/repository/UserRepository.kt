@@ -27,7 +27,9 @@ data class ProfileFieldsUpdate(
     val role:       String,
     val bio:        String?      = null,
     val languages:  List<String> = emptyList(),
-    val speciality: String?      = null
+    val speciality: String?      = null,
+    @SerialName("avatar_url")
+    val photoUrl:   String?      = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,6 +51,9 @@ interface UserRepository {
 
     /** Update profile fields (name, emoji, bio, languages, speciality). */
     suspend fun updateProfile(userId: String, updates: ProfileFieldsUpdate): Result<Unit>
+
+    /** Update only avatar_url — safe partial update. */
+    suspend fun updateAvatarUrl(userId: String, url: String): Result<Unit>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,8 +80,7 @@ class UserRepositoryImpl @Inject constructor(
             .select(Columns.ALL) {
                 filter {
                     eq("id", driverId)
-                    // Note: no role filter — fetch by ID regardless of role
-                    // so BookingViewModel can enrich bookings with any driver's info
+                    eq("role", "driver")
                 }
                 limit(1)
             }
@@ -108,15 +112,23 @@ class UserRepositoryImpl @Inject constructor(
         updates: ProfileFieldsUpdate
     ): Result<Unit> = runCatching {
         table.update({
-            set("name",       updates.name)
-            set("emoji",      updates.emoji)
-            set("role",       updates.role)
-            set("bio",        updates.bio)
-            set("languages",  updates.languages)
-            set("speciality", updates.speciality)
+            if (updates.name.isNotBlank())  set("name",  updates.name)
+            if (updates.emoji.isNotBlank()) set("emoji", updates.emoji)
+            if (updates.role.isNotBlank())  set("role",  updates.role)
+            if (updates.bio  != null)       set("bio",   updates.bio)
+            if (updates.languages.isNotEmpty()) set("languages",  updates.languages)
+            if (updates.speciality != null) set("speciality", updates.speciality)
+            if (updates.photoUrl   != null) set("avatar_url", updates.photoUrl)
         }) {
             filter { eq("id", userId) }
             select()
+        }
+        Unit
+    }
+
+    override suspend fun updateAvatarUrl(userId: String, url: String): Result<Unit> = runCatching {
+        table.update({ set("avatar_url", url) }) {
+            filter { eq("id", userId) }
         }
         Unit
     }

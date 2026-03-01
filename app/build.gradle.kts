@@ -103,7 +103,7 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.ktor:ktor-client-android:3.0.0")
 
-
+    implementation("androidx.compose.material:material-icons-extended")
     // ── Coil ─────────────────────────────────────────────────────────────────
     implementation(libs.coil.compose)
 

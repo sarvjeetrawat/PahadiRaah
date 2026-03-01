@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.data.model.UserDto
 import com.kunpitech.pahadiraah.viewmodel.UserViewModel
@@ -64,6 +66,7 @@ data class DriverProfile(
     val id: String,
     val name: String,
     val emoji: String,
+    val photoUrl: String? = null,
     val rating: Float,
     val totalTrips: Int,
     val vehicle: String,
@@ -98,6 +101,7 @@ private fun UserDto.toDriverProfile() = DriverProfile(
     id            = id,
     name          = name,
     emoji         = emoji,
+    photoUrl      = avatarUrl,
     rating        = avgRating.toFloat(),
     totalTrips    = totalTrips,
     vehicle       = "SUV / Jeep",
@@ -581,7 +585,16 @@ fun DriverCard(
                         )
                         .border(2.dp, BorderSubtle, PahadiRaahShapes.medium)
                 ) {
-                    Text(text = driver.emoji, fontSize = 28.sp)
+                    if (!driver.photoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model              = driver.photoUrl,
+                            contentDescription = driver.name,
+                            contentScale       = ContentScale.Crop,
+                            modifier           = Modifier.size(60.dp).clip(PahadiRaahShapes.medium)
+                        )
+                    } else {
+                        Text(text = driver.emoji, fontSize = 28.sp)
+                    }
                 }
                 // Online indicator dot
                 Box(
@@ -632,7 +645,8 @@ fun DriverCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier              = Modifier.fillMaxWidth()
                 ) {
                     RatingStars(rating = driver.rating)
                     Text(
@@ -640,29 +654,20 @@ fun DriverCard(
                         style = PahadiRaahTypography.labelMedium.copy(
                             color         = Amber,
                             letterSpacing = 0.sp
-                        )
+                        ),
+                        maxLines = 1
                     )
                     Text(
-                        text  = "•",
-                        style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.3f))
-                    )
-                    Text(
-                        text  = "${driver.totalTrips} trips",
-                        style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
-                    )
-                    Text(
-                        text  = "•",
-                        style = PahadiRaahTypography.bodySmall.copy(color = Sage.copy(alpha = 0.3f))
-                    )
-                    Text(
-                        text  = "${driver.yearsActive} yrs",
-                        style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp)
+                        text  = "• ${driver.totalTrips} trips • ${driver.yearsActive} yrs",
+                        style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 11.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
             // Fare + vehicle
-            Column(horizontalAlignment = Alignment.End) {
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.widthIn(min = 60.dp, max = 72.dp)) {
                 Text(text = driver.vehicleEmoji, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

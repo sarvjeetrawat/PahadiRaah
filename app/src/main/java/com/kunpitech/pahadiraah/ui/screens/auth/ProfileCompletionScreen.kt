@@ -1,5 +1,8 @@
 package com.kunpitech.pahadiraah.ui.screens.auth
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,7 +14,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +30,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -28,11 +39,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.kunpitech.pahadiraah.data.model.ActionResult
 import com.kunpitech.pahadiraah.ui.theme.*
 import com.kunpitech.pahadiraah.viewmodel.ProfileViewModel
+import java.io.File
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ProfileCompletionScreen
@@ -89,7 +103,28 @@ fun ProfileCompletionScreen(
 
     var started           by remember { mutableStateOf(false) }
     val saveResult        by viewModel.saveResult.collectAsStateWithLifecycle()
+    val uploadState       by viewModel.uploadState.collectAsStateWithLifecycle()
+    val uploadedPhotoUrl  by viewModel.photoUrl.collectAsStateWithLifecycle()
     val isDriver          = role == "driver"
+    val context           = LocalContext.current
+
+    // Photo picker state
+    var showPhotoDialog   by remember { mutableStateOf(false) }
+    var cameraImageUri    by remember { mutableStateOf<Uri?>(null) }
+
+    // Gallery launcher
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.uploadPhoto(context, it) }
+    }
+
+    // Camera launcher
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) cameraImageUri?.let { viewModel.uploadPhoto(context, it) }
+    }
 
     // ── Animations ────────────────────────────────────────────────────────────
     val bgAlpha      by animateFloatAsState(if (started) 1f else 0f, tween(500), label = "bg")
@@ -223,7 +258,7 @@ fun ProfileCompletionScreen(
                 Text(text = "CHOOSE YOUR AVATAR", style = FormLabelStyle)
                 Spacer(modifier = Modifier.height(Dimens.SpaceSM))
 
-                // Current selection — large display
+                // Current selection — large display with photo option
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -233,8 +268,8 @@ fun ProfileCompletionScreen(
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(20.dp))
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(24.dp))
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(
@@ -248,11 +283,111 @@ fun ProfileCompletionScreen(
                                 1.dp,
                                 if (isDriver) GlacierTeal.copy(alpha = 0.4f)
                                 else          Marigold.copy(alpha = 0.4f),
-                                RoundedCornerShape(20.dp)
+                                RoundedCornerShape(24.dp)
                             )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { showPhotoDialog = true }
                     ) {
-                        Text(text = selectedEmoji, fontSize = 36.sp)
+                        if (uploadedPhotoUrl != null) {
+                            AsyncImage(
+                                model             = uploadedPhotoUrl,
+                                contentDescription = "Profile photo",
+                                contentScale      = ContentScale.Crop,
+                                modifier          = Modifier
+                                    .size(88.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                            )
+                        } else {
+                            Text(text = selectedEmoji, fontSize = 36.sp)
+                        }
+                        // Camera overlay icon
+                        Box(
+                            contentAlignment = Alignment.BottomEnd,
+                            modifier = Modifier
+                                .size(88.dp)
+                                .padding(6.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        (if (isDriver) GlacierTeal else Marigold).copy(alpha = 0.9f)
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector        = Icons.Default.AddAPhoto,
+                                    contentDescription = "Change photo",
+                                    tint               = Color.White,
+                                    modifier           = Modifier.size(14.dp)
+                                )
+                            }
+                        }
                     }
+                    // Upload loading indicator
+                    if (uploadState is ActionResult.Loading) {
+                        Text("Uploading...", style = PahadiRaahTypography.labelSmall.copy(color = Sage))
+                    }
+                }
+
+                // Photo source dialog
+                if (showPhotoDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPhotoDialog = false },
+                        title = { Text("Choose Photo Source") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SurfaceMedium)
+                                        .clickable {
+                                            showPhotoDialog = false
+                                            galleryLauncher.launch("image/*")
+                                        }
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Image, contentDescription = null, tint = Sage)
+                                    Text("Choose from Gallery", style = PahadiRaahTypography.bodyMedium.copy(color = SnowPeak))
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SurfaceMedium)
+                                        .clickable {
+                                            showPhotoDialog = false
+                                            val photoFile = File(context.cacheDir, "profile_photo.jpg")
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.provider",
+                                                photoFile
+                                            )
+                                            cameraImageUri = uri
+                                            cameraLauncher.launch(uri)
+                                        }
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.AddAPhoto, contentDescription = null, tint = Sage)
+                                    Text("Take Photo", style = PahadiRaahTypography.bodyMedium.copy(color = SnowPeak))
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { showPhotoDialog = false }) {
+                                Text("Cancel", color = Sage)
+                            }
+                        }
+                    )
                 }
 
                 // Emoji grid

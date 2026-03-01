@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.kunpitech.pahadiraah.data.model.RouteDto
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.data.model.UserDto
@@ -305,7 +307,16 @@ fun PassengerDashHeader(
                         onClick           = onProfile
                     )
             ) {
-                Text(text = profile?.emoji ?: "🎒", fontSize = 18.sp)
+                if (!profile?.avatarUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = profile!!.avatarUrl,
+                        contentDescription = "Avatar",
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(40.dp).clip(CircleShape)
+                    )
+                } else {
+                    Text(text = profile?.emoji ?: "🎒", fontSize = 18.sp)
+                }
             }
         }
     }
@@ -430,7 +441,16 @@ fun RealDriverCard(driver: UserDto, onClick: () -> Unit) {
                     .clip(PahadiRaahShapes.medium)
                     .background(Brush.verticalGradient(listOf(PineDeep, PineMid.copy(alpha = 0.7f))))
             ) {
-                Text(text = driver.emoji, fontSize = 22.sp)
+                if (!driver.avatarUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = driver.avatarUrl,
+                        contentDescription = driver.name,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(48.dp).clip(PahadiRaahShapes.medium)
+                    )
+                } else {
+                    Text(text = driver.emoji, fontSize = 22.sp)
+                }
             }
             Box(
                 modifier = Modifier

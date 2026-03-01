@@ -1,5 +1,9 @@
 package com.kunpitech.pahadiraah.ui.screens.profile
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.Manifest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,7 +17,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +38,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
+import java.io.File
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +97,10 @@ fun MyProfileScreen(
     val vehicleState by vehicleViewModel.myVehicle.collectAsStateWithLifecycle()
     val saveResult   by profileViewModel.saveResult.collectAsStateWithLifecycle()
     val vehicleSave  by vehicleViewModel.saveResult.collectAsStateWithLifecycle()
+    val uploadState  by profileViewModel.uploadState.collectAsStateWithLifecycle()
+    val photoUrl     by profileViewModel.photoUrl.collectAsStateWithLifecycle()
 
+    val context      = LocalContext.current
     var isEditing by remember { mutableStateOf(false) }
     var started   by remember { mutableStateOf(false) }
 
@@ -115,6 +133,7 @@ fun MyProfileScreen(
     // ── Load data ─────────────────────────────────────────────────────────────
     LaunchedEffect(Unit) {
         userViewModel.loadMyProfile()
+        profileViewModel.cacheUid()   // cache uid now so camera resume doesn't lose session
         started = true
     }
 
@@ -127,6 +146,8 @@ fun MyProfileScreen(
             editBio        = d.bio ?: ""
             editLanguages  = d.languages.toSet()
             editSpeciality = d.speciality ?: ""
+            // Pre-load existing photo
+            profileViewModel.setPhotoUrl(d.avatarUrl)
             // Load vehicle when profile loads (driver only)
             if (d.role == "driver") vehicleViewModel.loadMyVehicle(d.id)
         }
@@ -140,6 +161,14 @@ fun MyProfileScreen(
             editVehicleModel = v.model
             editRegNumber    = v.regNumber
             editSeatCapacity = v.seatCapacity
+        }
+    }
+
+    // Reload profile when photo upload succeeds so avatar shows immediately
+    LaunchedEffect(uploadState) {
+        if (uploadState is ActionResult.Success) {
+            profileViewModel.resetUploadState()
+            userViewModel.loadMyProfile()
         }
     }
 
@@ -174,19 +203,17 @@ fun MyProfileScreen(
         }
         if (!ok) return
 
-        val existingVehicleId = (vehicleState as? UiState.Success<VehicleDto?>)?.data?.id
         profileViewModel.saveProfile(
-            name               = editName.trim(),
-            emoji              = editEmoji,
-            bio                = editBio.trim().ifBlank { null },
-            languages          = editLanguages.toList(),
-            speciality         = editSpeciality.trim().ifBlank { null },
-            isDriver           = isDriver,
-            vehicleType        = editVehicleType,
-            vehicleModel       = editVehicleModel.trim(),
-            regNumber          = editRegNumber.trim().uppercase(),
-            seatCapacity       = editSeatCapacity,
-            existingVehicleId  = existingVehicleId
+            name         = editName.trim(),
+            emoji        = editEmoji,
+            bio          = editBio.trim().ifBlank { null },
+            languages    = editLanguages.toList(),
+            speciality   = editSpeciality.trim().ifBlank { null },
+            isDriver     = isDriver,
+            vehicleType  = editVehicleType,
+            vehicleModel = editVehicleModel.trim(),
+            regNumber    = editRegNumber.trim().uppercase(),
+            seatCapacity = editSeatCapacity
         )
     }
 
@@ -290,6 +317,9 @@ fun MyProfileScreen(
                         EditContent(
                             profile            = p,
                             vehicle            = v,
+                            uploadState        = uploadState,
+                            photoUrl           = photoUrl,
+                            onUploadPhoto      = { uri -> profileViewModel.uploadPhoto(context, uri) },
                             editName           = editName,           onNameChange       = { editName = it; nameError = null },        nameError = nameError,
                             editEmoji          = editEmoji,          onEmojiChange      = { editEmoji = it },
                             editBio            = editBio,            onBioChange        = { editBio = it },
@@ -339,7 +369,7 @@ private fun ViewContent(
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
 
         // ── Avatar ────────────────────────────────────────────────────────────
-        AvatarCircle(emoji = profile?.emoji ?: "🧑", isDriver = isDriver, size = 96)
+        AvatarCircle(emoji = profile?.emoji ?: "🧑", isDriver = isDriver, size = 96, photoUrl = profile?.avatarUrl)
 
         Spacer(Modifier.height(Dimens.SpaceMD))
 
@@ -447,6 +477,9 @@ private fun ViewContent(
 private fun EditContent(
     profile:             UserDto,
     vehicle:             VehicleDto?,
+    uploadState:         ActionResult,
+    photoUrl:            String?,
+    onUploadPhoto:       (Uri) -> Unit,
     editName:            String,  onNameChange:         (String)  -> Unit, nameError: String?,
     editEmoji:           String,  onEmojiChange:        (String)  -> Unit,
     editBio:             String,  onBioChange:          (String)  -> Unit,
@@ -471,7 +504,50 @@ private fun EditContent(
         Spacer(Modifier.height(Dimens.SpaceXS))
 
         // Avatar picker
-        EmojiPicker(selectedEmoji = editEmoji, isDriver = isDriver, onEmojiChange = onEmojiChange)
+        // Photo launchers
+        val context2 = LocalContext.current
+        var showPhotoDialog by remember { mutableStateOf(false) }
+        var cameraUri by remember { mutableStateOf<Uri?>(null) }
+
+        val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let { onUploadPhoto(it) }
+        }
+        val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            if (success) cameraUri?.let { onUploadPhoto(it) }
+        }
+        val cameraPermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                try {
+                    val file = File(context2.cacheDir, "profile_photo.jpg").also {
+                        if (!it.exists()) it.createNewFile()
+                    }
+                    val uri = FileProvider.getUriForFile(
+                        context2, "${context2.packageName}.provider", file
+                    )
+                    cameraUri = uri
+                    cameraLauncher.launch(uri)
+                } catch (e: Exception) {
+                    android.util.Log.e("ProfileVM", "Camera URI error: ${e.message}", e)
+                }
+            }
+        }
+
+        EmojiPicker(
+            selectedEmoji   = editEmoji,
+            isDriver        = isDriver,
+            onEmojiChange   = onEmojiChange,
+            photoUrl        = photoUrl,
+            uploadState     = uploadState,
+            onCameraClick   = {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            },
+            onGalleryClick  = { galleryLauncher.launch("image/*") },
+            showPhotoDialog = showPhotoDialog,
+            onShowDialog    = { showPhotoDialog = true },
+            onDismissDialog = { showPhotoDialog = false }
+        )
 
         // Name
         EditField("FULL NAME", editName, onNameChange, "Your full name", nameError, KeyboardType.Text, ImeAction.Next)
@@ -599,7 +675,7 @@ private fun EditContent(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun AvatarCircle(emoji: String, isDriver: Boolean, size: Int) {
+private fun AvatarCircle(emoji: String, isDriver: Boolean, size: Int, photoUrl: String? = null) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -612,7 +688,16 @@ private fun AvatarCircle(emoji: String, isDriver: Boolean, size: Int) {
                 if (isDriver) GlacierTeal.copy(alpha = 0.5f) else Saffron.copy(alpha = 0.5f),
                 CircleShape)
     ) {
-        Text(emoji, fontSize = (size * 0.46f).sp)
+        if (!photoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model              = photoUrl,
+                contentDescription = "Profile photo",
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.size(size.dp).clip(CircleShape)
+            )
+        } else {
+            Text(emoji, fontSize = (size * 0.46f).sp)
+        }
     }
 }
 
@@ -686,21 +771,113 @@ private fun InfoCard(label: String, value: String, muted: Boolean = false) {
 }
 
 @Composable
-private fun EmojiPicker(selectedEmoji: String, isDriver: Boolean, onEmojiChange: (String) -> Unit) {
+private fun EmojiPicker(
+    selectedEmoji:   String,
+    isDriver:        Boolean,
+    onEmojiChange:   (String) -> Unit,
+    photoUrl:        String?      = null,
+    uploadState:     ActionResult = ActionResult.Idle,
+    onCameraClick:   () -> Unit   = {},
+    onGalleryClick:  () -> Unit   = {},
+    showPhotoDialog: Boolean      = false,
+    onShowDialog:    () -> Unit   = {},
+    onDismissDialog: () -> Unit   = {}
+) {
     val accent = if (isDriver) GlacierTeal else Marigold
     Column {
         Text("AVATAR", style = FormLabelStyle)
         Spacer(Modifier.height(Dimens.SpaceSM))
 
-        // Big preview
+        // Big preview with camera overlay
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(64.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                modifier = Modifier.size(80.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(accent.copy(alpha = 0.12f))
-                    .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
-            ) { Text(selectedEmoji, fontSize = 32.sp) }
+                    .border(1.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(22.dp))
+                    .clickable(remember { MutableInteractionSource() }, null) { onShowDialog() }
+            ) {
+                if (photoUrl != null) {
+                    AsyncImage(
+                        model              = photoUrl,
+                        contentDescription = "Profile photo",
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(80.dp).clip(RoundedCornerShape(22.dp))
+                    )
+                } else {
+                    Text(selectedEmoji, fontSize = 36.sp)
+                }
+                // Camera badge
+                Box(
+                    contentAlignment = Alignment.BottomEnd,
+                    modifier = Modifier.size(80.dp).padding(6.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(22.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(accent.copy(alpha = 0.9f))
+                    ) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = null,
+                            tint = Color.White, modifier = Modifier.size(13.dp))
+                    }
+                }
+            }
+            if (uploadState is ActionResult.Loading) {
+                Spacer(Modifier.height(4.dp))
+                Text("Uploading...", style = PahadiRaahTypography.labelSmall.copy(color = Sage),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(top = 86.dp))
+            }
+            if (uploadState is ActionResult.Error) {
+                Text(
+                    "Upload failed: ${(uploadState as ActionResult.Error).message}",
+                    style    = PahadiRaahTypography.labelSmall.copy(color = StatusError),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(top = 86.dp)
+                )
+            }
+        }
+
+        // Photo source dialog
+        if (showPhotoDialog) {
+            AlertDialog(
+                onDismissRequest = onDismissDialog,
+                title = { Text("Choose Photo", style = PahadiRaahTypography.titleMedium.copy(color = SnowPeak)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SurfaceMedium)
+                                .clickable(remember { MutableInteractionSource() }, null) {
+                                    onDismissDialog(); onGalleryClick()
+                                }
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Image, contentDescription = null, tint = Sage)
+                            Text("Choose from Gallery", style = PahadiRaahTypography.bodyMedium.copy(color = SnowPeak))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SurfaceMedium)
+                                .clickable(remember { MutableInteractionSource() }, null) {
+                                    onDismissDialog(); onCameraClick()
+                                }
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AddAPhoto, contentDescription = null, tint = Sage)
+                            Text("Take Photo", style = PahadiRaahTypography.bodyMedium.copy(color = SnowPeak))
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = onDismissDialog) { Text("Cancel", color = Sage) } }
+            )
         }
 
         Spacer(Modifier.height(Dimens.SpaceSM))
