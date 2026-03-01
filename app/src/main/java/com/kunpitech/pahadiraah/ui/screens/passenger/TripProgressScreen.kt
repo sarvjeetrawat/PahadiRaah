@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,21 +52,22 @@ data class TripMilestone(
 )
 
 data class LiveTrip(
-    val tripId:       String,
-    val origin:       String,
-    val destination:  String,
-    val routeEmoji:   String,
-    val driverName:   String,
-    val driverEmoji:  String,
-    val vehicle:      String,
-    val date:         String,
-    val departedAt:   String,
-    val eta:          String,
-    val progressFrac: Float,       // 0.0 – 1.0
-    val currentLeg:   String,      // "En route to Mandi"
-    val speed:        String,      // "62 km/h"
-    val distance:     String,      // "145 km remaining"
-    val milestones:   List<TripMilestone>
+    val tripId:         String,
+    val origin:         String,
+    val destination:    String,
+    val routeEmoji:     String,
+    val driverName:     String,
+    val driverEmoji:    String,
+    val driverPhotoUrl: String? = null,
+    val vehicle:        String,
+    val date:           String,
+    val departedAt:     String,
+    val eta:            String,
+    val progressFrac:   Float,
+    val currentLeg:     String,
+    val speed:          String,
+    val distance:       String,
+    val milestones:     List<TripMilestone>
 )
 
 
@@ -83,39 +86,45 @@ fun TripProgressScreen(
     val bookingsState by bookingVm.myBookings.collectAsStateWithLifecycle()
     val liveLocation  by locationVm.liveLocation.collectAsStateWithLifecycle()
 
-    // Subscribe to live updates
     LaunchedEffect(bookingId) {
         bookingVm.loadMyBookings()
         bookingVm.subscribeToBookingUpdates(bookingId)
         locationVm.startListeningLocation(bookingId)
     }
 
-    // Find the specific booking from loaded list
     val booking = (bookingsState as? UiState.Success)?.data?.firstOrNull { it.id == bookingId }
 
-    // Build LiveTrip from BookingDto, falling back to sample for initial render
     val trip = remember(booking, liveLocation) {
         booking?.let { b ->
             LiveTrip(
-                tripId      = b.id,
-                origin      = b.routes?.origin ?: "Origin",
-                destination = b.routes?.destination ?: "Destination",
-                routeEmoji  = "🏔️",
-                driverName  = b.routes?.users?.name ?: "Driver",
-                driverEmoji = b.routes?.users?.emoji ?: "🧑",
-                vehicle     = b.routes?.vehicleId ?: "Vehicle",
-                date        = b.routes?.date ?: "",
-                departedAt  = b.routes?.time?.take(5) ?: "--",
-                eta         = "~${b.routes?.durationHrs ?: "--"}",
-                progressFrac= when (b.status) {
+                tripId         = b.id,
+                origin         = b.routes?.origin ?: "Origin",
+                destination    = b.routes?.destination ?: "Destination",
+                routeEmoji     = when {
+                    b.routes?.origin?.contains("Shimla",      ignoreCase = true) == true -> "🏔️"
+                    b.routes?.origin?.contains("Dharamshala", ignoreCase = true) == true -> "🌲"
+                    b.routes?.origin?.contains("Rishikesh",   ignoreCase = true) == true -> "🌊"
+                    b.routes?.origin?.contains("Nainital",    ignoreCase = true) == true -> "⛰️"
+                    else -> "🏕️"
+                },
+                driverName     = b.routes?.users?.name ?: "Driver",
+                driverEmoji    = b.routes?.users?.emoji ?: "🧑",
+                driverPhotoUrl = b.routes?.users?.avatarUrl,
+                vehicle        = b.routes?.vehicles?.model?.ifBlank { null }
+                    ?: b.routes?.vehicles?.type?.replaceFirstChar { it.uppercase() }
+                    ?: "Vehicle",
+                date           = b.routes?.date ?: "",
+                departedAt     = b.routes?.time?.take(5) ?: "--",
+                eta            = "~${b.routes?.durationHrs ?: "--"}",
+                progressFrac   = when (b.status) {
                     "ongoing"   -> 0.5f
                     "completed" -> 1.0f
                     else        -> 0.0f
                 },
-                currentLeg  = "En route to ${b.routes?.destination ?: "destination"}",
-                speed       = "${liveLocation?.speedKmh?.toInt() ?: 0} km/h",
-                distance    = "-- km remaining",
-                milestones  = emptyList()
+                currentLeg     = "En route to ${b.routes?.destination ?: "destination"}",
+                speed          = "${liveLocation?.speedKmh?.toInt() ?: 0} km/h",
+                distance       = "-- km remaining",
+                milestones     = emptyList()
             )
         } ?: LiveTrip(
             tripId       = bookingId,
@@ -124,6 +133,7 @@ fun TripProgressScreen(
             routeEmoji   = "🏔️",
             driverName   = "Loading…",
             driverEmoji  = "🧑",
+            driverPhotoUrl = null,
             vehicle      = "",
             date         = "",
             departedAt   = "--",
@@ -177,7 +187,6 @@ fun TripProgressScreen(
             .fillMaxSize()
             .background(Pine)
     ) {
-        // Ambient glow
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -258,7 +267,6 @@ fun TripProgressScreen(
                         .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
                         .padding(20.dp)
                 ) {
-                    // Origin → Destination
                     Row(
                         verticalAlignment     = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -292,7 +300,6 @@ fun TripProgressScreen(
                                 .clip(PillShape)
                                 .background(Brush.horizontalGradient(GradientGold))
                         )
-                        // Vehicle dot
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(animProgress)
@@ -352,6 +359,7 @@ fun TripProgressScreen(
                         .border(1.dp, BorderSubtle, PahadiRaahShapes.large)
                         .padding(16.dp)
                 ) {
+                    // Driver avatar — real photo or emoji fallback
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -359,7 +367,18 @@ fun TripProgressScreen(
                             .clip(PahadiRaahShapes.medium)
                             .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
                     ) {
-                        Text(trip.driverEmoji, fontSize = 24.sp)
+                        if (!trip.driverPhotoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model              = trip.driverPhotoUrl,
+                                contentDescription = trip.driverName,
+                                contentScale       = ContentScale.Crop,
+                                modifier           = Modifier
+                                    .size(52.dp)
+                                    .clip(PahadiRaahShapes.medium)
+                            )
+                        } else {
+                            Text(trip.driverEmoji, fontSize = 24.sp)
+                        }
                     }
                     Column(Modifier.weight(1f)) {
                         Text(trip.driverName, style = PahadiRaahTypography.titleSmall.copy(color = Snow))
@@ -424,7 +443,6 @@ fun TripProgressScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp)
                 .navigationBarsPadding()
         ) {
-            // Departed / ETA row
             Row(
                 modifier              = Modifier
                     .fillMaxWidth()
@@ -437,7 +455,6 @@ fun TripProgressScreen(
                     Text(trip.departedAt, style = PahadiRaahTypography.titleSmall.copy(color = Snow))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // Mini progress indicator
                     LinearProgressIndicator(
                         progress          = { animProgress },
                         modifier          = Modifier.width(100.dp).height(4.dp).clip(PillShape),
@@ -457,7 +474,6 @@ fun TripProgressScreen(
                 }
             }
 
-            // Rate trip button (only if progress >= 100%)
             if (trip.progressFrac >= 1f) {
                 RateTripButton(onClick = {
                     onRateTrip(
@@ -506,9 +522,9 @@ fun LiveStatCard(emoji: String, value: String, label: String, color: Color, modi
         Spacer(Modifier.height(5.dp))
         Text(
             value,
-            style    = PahadiRaahTypography.labelMedium.copy(color = color, fontSize = 12.sp, letterSpacing = 0.sp),
+            style     = PahadiRaahTypography.labelMedium.copy(color = color, fontSize = 12.sp, letterSpacing = 0.sp),
             textAlign = TextAlign.Center,
-            maxLines = 2
+            maxLines  = 2
         )
         Spacer(Modifier.height(2.dp))
         Text(label, style = PahadiRaahTypography.bodySmall.copy(color = color.copy(alpha = 0.55f), fontSize = 9.sp))
@@ -536,7 +552,6 @@ fun MilestoneRow(milestone: TripMilestone, isLast: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier              = Modifier.fillMaxWidth()
     ) {
-        // Timeline spine
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -559,7 +574,6 @@ fun MilestoneRow(milestone: TripMilestone, isLast: Boolean) {
                     color    = if (milestone.isDone || milestone.isActive) Snow else Sage.copy(alpha = 0.3f)
                 )
             }
-            // Connector line
             if (!isLast) {
                 Box(
                     modifier = Modifier
@@ -577,7 +591,6 @@ fun MilestoneRow(milestone: TripMilestone, isLast: Boolean) {
             }
         }
 
-        // Text content
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -591,10 +604,7 @@ fun MilestoneRow(milestone: TripMilestone, isLast: Boolean) {
             ) {
                 Text(
                     text  = milestone.label,
-                    style = PahadiRaahTypography.bodyMedium.copy(
-                        color    = textColor,
-                        fontSize = 13.sp
-                    )
+                    style = PahadiRaahTypography.bodyMedium.copy(color = textColor, fontSize = 13.sp)
                 )
                 Text(
                     text  = milestone.time,
@@ -606,10 +616,7 @@ fun MilestoneRow(milestone: TripMilestone, isLast: Boolean) {
             }
             if (milestone.isActive) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    "Current stop",
-                    style = BadgeStyle.copy(color = Amber, fontSize = 9.sp)
-                )
+                Text("Current stop", style = BadgeStyle.copy(color = Amber, fontSize = 9.sp))
             }
         }
     }

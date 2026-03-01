@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.kunpitech.pahadiraah.data.model.ReviewDto
 import com.kunpitech.pahadiraah.data.model.RouteDto
 import com.kunpitech.pahadiraah.data.model.UiState
@@ -49,6 +51,7 @@ import com.kunpitech.pahadiraah.ui.theme.*
 data class DriverReview(
     val passengerName: String,
     val passengerEmoji: String,
+    val passengerPhotoUrl: String? = null,
     val rating: Int,
     val comment: String,
     val date: String,
@@ -77,12 +80,13 @@ data class UpcomingTrip(
 // ─────────────────────────────────────────────────────────────────────────────
 
 private fun ReviewDto.toDriverReview() = DriverReview(
-    passengerName  = users?.name  ?: "Passenger",
-    passengerEmoji = users?.emoji ?: "🧑",
-    rating         = overallRating,
-    comment        = comment.ifBlank { "Great experience on this route!" },
-    date           = createdAt?.take(10) ?: "",
-    route          = tags.firstOrNull() ?: "Mountain Route"
+    passengerName     = users?.name     ?: "Passenger",
+    passengerEmoji    = users?.emoji    ?: "🧑",
+    passengerPhotoUrl = users?.avatarUrl,
+    rating            = overallRating,
+    comment           = comment.ifBlank { "Great experience on this route!" },
+    date              = createdAt?.take(10) ?: "",
+    route             = tags.firstOrNull() ?: "Mountain Route"
 )
 
 private fun RouteDto.toUpcomingTrip() = UpcomingTrip(
@@ -131,23 +135,7 @@ fun DriverProfileScreen(
 
     // ── Map to UI models ──────────────────────────────────────────────────────
     val driver: UserDto? = (profileState as? UiState.Success)?.data
-    // Filter to strictly future-departing routes before mapping to UI models.
-    // loadDriverUpcomingRoutes already guards at ViewModel level, but this is
-    // a second client-side check in case of stale cached data.
     val upcomingTrips = (routesState as? UiState.Success)?.data
-        ?.filter { route ->
-            try {
-                val depDate = java.time.LocalDate.parse(route.date)
-                val parts   = route.time.split(":").map { it.toIntOrNull() ?: 0 }
-                val depTime = java.time.LocalTime.of(
-                    parts.getOrElse(0) { 0 },
-                    parts.getOrElse(1) { 0 },
-                    parts.getOrElse(2) { 0 }
-                )
-                java.time.LocalDateTime.of(depDate, depTime)
-                    .isAfter(java.time.LocalDateTime.now())
-            } catch (e: Exception) { false }
-        }
         ?.map { it.toUpcomingTrip() } ?: emptyList()
     val reviews = (reviewsState as? UiState.Success)?.data
         ?.map { it.toDriverReview() } ?: emptyList()
@@ -204,27 +192,56 @@ fun DriverProfileScreen(
                         .alpha(heroAlpha)
                         .graphicsLayer { translationY = heroOffset }
                 ) {
-                    // Hero background gradient
+                    // Hero background — photo if available, else gradient
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(260.dp)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Forest, Moss.copy(alpha = 0.8f), Pine)
+                    ) {
+                        // Always show gradient base
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.8f), Pine))
                                 )
+                        )
+                        if (!driver?.avatarUrl.isNullOrBlank()) {
+                            // Photo at low alpha — like a watermark/tint behind the avatar
+                            AsyncImage(
+                                model              = driver!!.avatarUrl,
+                                contentDescription = null,
+                                contentScale       = ContentScale.Crop,
+                                modifier           = Modifier
+                                    .fillMaxSize()
+                                    .alpha(0.25f)
                             )
-                    )
-
-                    // Decorative mountain emoji
-                    Text(
-                        text     = driver?.emoji ?: "🏔️",
-                        fontSize = 120.sp,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 40.dp, end = 16.dp)
-                            .alpha(0.1f)
-                    )
+                            // Gradient overlay fading to solid at bottom
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colorStops = arrayOf(
+                                                0.0f to Pine.copy(alpha = 0.1f),
+                                                0.6f to Pine.copy(alpha = 0.6f),
+                                                1.0f to Pine.copy(alpha = 0.95f)
+                                            )
+                                        )
+                                    )
+                            )
+                        } else {
+                            // Decorative emoji watermark
+                            Text(
+                                text     = "🏔️",
+                                fontSize = 120.sp,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 40.dp, end = 16.dp)
+                                    .alpha(0.1f)
+                            )
+                        }
+                    }
 
                     // Top bar (back + share)
                     Row(
@@ -270,7 +287,16 @@ fun DriverProfileScreen(
                                         .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
                                         .border(3.dp, if (isOnline) Sage else BorderSubtle, CircleShape)
                                 ) {
-                                    Text(text = driver?.emoji ?: "🧑", fontSize = 38.sp)
+                                    if (!driver?.avatarUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model              = driver!!.avatarUrl,
+                                            contentDescription = driver.name,
+                                            contentScale       = ContentScale.Crop,
+                                            modifier           = Modifier.size(80.dp).clip(CircleShape)
+                                        )
+                                    } else {
+                                        Text(text = driver?.emoji ?: "🧑", fontSize = 38.sp)
+                                    }
                                 }
                                 Box(
                                     modifier = Modifier
@@ -866,7 +892,16 @@ fun ReviewCard(review: DriverReview, modifier: Modifier = Modifier) {
                     .clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.6f))))
             ) {
-                Text(text = review.passengerEmoji, fontSize = 17.sp)
+                if (!review.passengerPhotoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = review.passengerPhotoUrl,
+                        contentDescription = review.passengerName,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(38.dp).clip(CircleShape)
+                    )
+                } else {
+                    Text(text = review.passengerEmoji, fontSize = 17.sp)
+                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(

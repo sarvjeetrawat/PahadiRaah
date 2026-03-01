@@ -22,14 +22,15 @@ private data class OnlineStatusUpdate(
 
 @Serializable
 data class ProfileFieldsUpdate(
-    val name:       String,
-    val emoji:      String,
-    val role:       String,
-    val bio:        String?      = null,
-    val languages:  List<String> = emptyList(),
-    val speciality: String?      = null,
+    val name:        String,
+    val emoji:       String,
+    val role:        String,
+    val bio:         String?      = null,
+    val languages:   List<String> = emptyList(),
+    val speciality:  String?      = null,
+    val yearsActive: Int?         = null,
     @SerialName("avatar_url")
-    val photoUrl:   String?      = null
+    val photoUrl:    String?      = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,8 +118,9 @@ class UserRepositoryImpl @Inject constructor(
             if (updates.role.isNotBlank())  set("role",  updates.role)
             if (updates.bio  != null)       set("bio",   updates.bio)
             if (updates.languages.isNotEmpty()) set("languages",  updates.languages)
-            if (updates.speciality != null) set("speciality", updates.speciality)
-            if (updates.photoUrl   != null) set("avatar_url", updates.photoUrl)
+            if (updates.speciality  != null) set("speciality",  updates.speciality)
+            if (updates.yearsActive != null) set("years_active", updates.yearsActive)
+            if (updates.photoUrl    != null) set("avatar_url",   updates.photoUrl)
         }) {
             filter { eq("id", userId) }
             select()

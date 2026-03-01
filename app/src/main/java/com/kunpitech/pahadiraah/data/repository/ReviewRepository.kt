@@ -34,29 +34,16 @@ class ReviewRepositoryImpl @Inject constructor(
     private val table get() = client.postgrest["reviews"]
 
     override suspend fun submitReview(review: NewReview): Result<ReviewDto> = runCatching {
-        // 1. Insert the review row
-        val saved = table
+        table
             .insert(review) { select() }
             .decodeSingle<ReviewDto>()
-
-        // 2. Mark the booking as reviewed so the "Rate Trip" button hides in MyBookings
-        runCatching {
-            client.postgrest["bookings"].update({
-                set("has_review", true)
-            }) {
-                filter { eq("id", review.bookingId) }
-                select()
-            }
-        }   // fire-and-forget — don't fail the whole submit if this update fails
-
-        saved
     }
 
     override suspend fun getDriverReviews(driverId: String): Result<List<ReviewDto>> =
         runCatching {
             table
                 .select(
-                    Columns.raw("*, users!reviewer_id(name, emoji)")
+                    Columns.raw("*, users!reviewer_id(name, emoji, avatar_url)")
                 ) {
                     filter { eq("driver_id", driverId) }
                     order("created_at", Order.DESCENDING)

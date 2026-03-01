@@ -117,6 +117,7 @@ fun MyProfileScreen(
     var editVehicleModel by remember { mutableStateOf("") }
     var editRegNumber    by remember { mutableStateOf("") }
     var editSeatCapacity by remember { mutableStateOf(6) }
+    var editYearsActive  by remember { mutableStateOf(0) }
     var vehicleModelError by remember { mutableStateOf<String?>(null) }
     var regError          by remember { mutableStateOf<String?>(null) }
 
@@ -190,7 +191,7 @@ fun MyProfileScreen(
         }
     }
 
-    fun validateAndSave(profile: UserDto) {
+    fun validateAndSave(profile: UserDto, vehicleId: String? = null) {
         nameError         = null
         vehicleModelError = null
         regError          = null
@@ -204,16 +205,18 @@ fun MyProfileScreen(
         if (!ok) return
 
         profileViewModel.saveProfile(
-            name         = editName.trim(),
-            emoji        = editEmoji,
-            bio          = editBio.trim().ifBlank { null },
-            languages    = editLanguages.toList(),
-            speciality   = editSpeciality.trim().ifBlank { null },
-            isDriver     = isDriver,
-            vehicleType  = editVehicleType,
-            vehicleModel = editVehicleModel.trim(),
-            regNumber    = editRegNumber.trim().uppercase(),
-            seatCapacity = editSeatCapacity
+            name              = editName.trim(),
+            emoji             = editEmoji,
+            bio               = editBio.trim().ifBlank { null },
+            languages         = editLanguages.toList(),
+            speciality        = editSpeciality.trim().ifBlank { null },
+            isDriver          = isDriver,
+            yearsActive       = editYearsActive,
+            vehicleType       = editVehicleType,
+            vehicleModel      = editVehicleModel.trim(),
+            regNumber         = editRegNumber.trim().uppercase(),
+            seatCapacity      = editSeatCapacity,
+            existingVehicleId = vehicleId
         )
     }
 
@@ -223,6 +226,7 @@ fun MyProfileScreen(
         editBio          = profile.bio ?: ""
         editLanguages    = profile.languages.toSet()
         editSpeciality   = profile.speciality ?: ""
+        editYearsActive  = profile.yearsActive
         nameError        = null
         vehicleModelError = null
         regError          = null
@@ -329,8 +333,9 @@ fun MyProfileScreen(
                             editVehicleModel   = editVehicleModel,   onVehicleModelChange = { editVehicleModel = it; vehicleModelError = null }, vehicleModelError = vehicleModelError,
                             editRegNumber      = editRegNumber,      onRegChange          = { editRegNumber = it.uppercase(); regError = null }, regError = regError,
                             editSeatCapacity   = editSeatCapacity,   onSeatChange         = { editSeatCapacity = it },
+                            editYearsActive    = editYearsActive,    onYearsActiveChange  = { editYearsActive = it },
                             saveResult         = saveResult,
-                            onSave             = { validateAndSave(p) },
+                            onSave             = { validateAndSave(p, v?.id) },
                             modifier           = mod
                         )
                     } else {
@@ -489,6 +494,7 @@ private fun EditContent(
     editVehicleModel:    String,  onVehicleModelChange: (String)  -> Unit, vehicleModelError: String?,
     editRegNumber:       String,  onRegChange:          (String)  -> Unit, regError: String?,
     editSeatCapacity:    Int,     onSeatChange:         (Int)     -> Unit,
+    editYearsActive:     Int,     onYearsActiveChange:  (Int)     -> Unit,
     saveResult:          ActionResult,
     onSave:              () -> Unit,
     modifier:            Modifier = Modifier
@@ -592,6 +598,53 @@ private fun EditContent(
             // Route speciality
             EditField("ROUTE SPECIALITY (OPTIONAL)", editSpeciality, onSpecialityChange,
                 "e.g. Spiti Valley, Rohtang Pass", imeAction = ImeAction.Done)
+
+            // ── Years of Experience (driver only) ────────────────────────────
+            if (isDriver) {
+                Spacer(Modifier.height(Dimens.SpaceMD))
+                Text("YEARS OF EXPERIENCE", style = FormLabelStyle)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier              = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceMid)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication        = null,
+                                onClick           = { if (editYearsActive > 0) onYearsActiveChange(editYearsActive - 1) }
+                            )
+                    ) {
+                        Text("−", style = PahadiRaahTypography.titleLarge.copy(color = SnowPeak))
+                    }
+                    Text(
+                        text      = if (editYearsActive == 0) "New Driver" else "$editYearsActive yr${if (editYearsActive > 1) "s" else ""}",
+                        style     = PahadiRaahTypography.titleMedium.copy(color = SnowPeak),
+                        modifier  = Modifier.weight(1f),
+                        textAlign = TextAlign.Center
+                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceMid)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication        = null,
+                                onClick           = { onYearsActiveChange(editYearsActive + 1) }
+                            )
+                    ) {
+                        Text("+", style = PahadiRaahTypography.titleLarge.copy(color = SnowPeak))
+                    }
+                }
+            }
 
             // ══════════════════════════════════════════════════════════════════
             //  SECTION 3 — VEHICLE (driver only)

@@ -47,7 +47,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import coil.compose.AsyncImage
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -73,6 +75,7 @@ data class RouteResult(
     val time: String,
     val driverName: String,
     val driverEmoji: String,
+    val driverPhotoUrl: String? = null,
     val driverRating: Float,
     val driverTrips: Int,
     val vehicle: String,
@@ -84,16 +87,6 @@ data class RouteResult(
 
 enum class SortOption { PRICE_LOW, PRICE_HIGH, RATING, SEATS, TIME }
 
-val allRoutes = listOf(
-    RouteResult("1","🏔️","Shimla",     "Manali",       "Jun 22","6:00 AM","Ramesh Kumar","🧔",4.9f,134,"SUV / Jeep",   "₹850",  2,4,"6–7 hrs"),
-    RouteResult("2","🌄","Dehradun",   "Mussoorie",    "Jun 22","8:30 AM","Sita Devi",   "👩",4.7f,89, "Sedan",        "₹300",  4,4,"1.5 hrs"),
-    RouteResult("3","⛰️","Nainital",   "Bhimtal",      "Jun 23","9:00 AM","Arjun Singh", "👨",4.5f,52, "Sedan",        "₹180",  3,4,"45 min"),
-    RouteResult("4","🗻","Dharamshala","Spiti Valley", "Jun 25","5:00 AM","Dev Mehta",   "👨",4.8f,212,"SUV / Jeep",   "₹1,200",1,6,"8–9 hrs"),
-    RouteResult("5","🌲","Rishikesh",  "Chopta",       "Jun 23","7:00 AM","Meena Rawat", "👩",4.6f,77, "Tempo",        "₹550",  6,12,"4 hrs"),
-    RouteResult("6","🏔️","Shimla",     "Manali",       "Jun 23","7:30 AM","Vikram Thakur","👨",4.4f,38,"Sedan",        "₹750",  2,4,"7 hrs"),
-    RouteResult("7","🌊","Haridwar",   "Badrinath",    "Jun 24","4:00 AM","Priyanka Dev","👩",4.9f,155,"SUV / Jeep",   "₹950",  3,6,"9 hrs"),
-    RouteResult("8","🌿","Shimla",     "Kalpa",        "Jun 26","6:30 AM","Raj Kumar",   "👨",4.7f,91, "SUV / Jeep",   "₹700",  4,6,"6 hrs"),
-)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SCREEN
@@ -116,7 +109,8 @@ private fun RouteDto.toRouteResult() = RouteResult(
     date         = date,
     time         = time.take(5),
     driverName   = users?.name ?: "Driver",
-    driverEmoji  = users?.emoji ?: "🧑",
+    driverEmoji    = users?.emoji ?: "🧑",
+    driverPhotoUrl = users?.avatarUrl,
     driverRating = users?.avgRating?.toFloat() ?: 0f,
     driverTrips  = users?.totalTrips ?: 0,
     vehicle      = "Vehicle",
@@ -1093,7 +1087,16 @@ fun RouteResultCard(
                     .clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.6f))))
             ) {
-                Text(text = result.driverEmoji, fontSize = 14.sp)
+                if (!result.driverPhotoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = result.driverPhotoUrl,
+                        contentDescription = result.driverName,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(30.dp).clip(CircleShape)
+                    )
+                } else {
+                    Text(text = result.driverEmoji, fontSize = 14.sp)
+                }
             }
 
             Column(modifier = Modifier.weight(1f)) {

@@ -36,16 +36,19 @@ import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.viewmodel.BookingViewModel
 import com.kunpitech.pahadiraah.viewmodel.RouteViewModel
 import com.kunpitech.pahadiraah.ui.theme.*
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DATA
 // ─────────────────────────────────────────────────────────────────────────────
 
 data class BookingSummary(
-    val bookingId:     String,
-    val driverName:    String,
-    val driverEmoji:   String,
-    val driverRating:  Float,
+    val bookingId:      String,
+    val driverName:     String,
+    val driverEmoji:    String,
+    val driverPhotoUrl: String? = null,
+    val driverRating:   Float,
     val vehicle:       String,
     val vehicleEmoji:  String,
     val origin:        String,
@@ -120,8 +123,6 @@ fun BookingConfirmScreen(
     val maxSeats = (route?.seatsLeft ?: 4).coerceAtLeast(1)
 
     // ── Departure guard — true when the trip has already departed ─────────────
-    // Checked against now() each recomposition so it stays accurate even if the
-    // screen is left open past midnight.
     val isDeparted = remember(route) {
         val r = route ?: return@remember false
         try {
@@ -140,14 +141,17 @@ fun BookingConfirmScreen(
         route?.let { r ->
             BookingSummary(
                 bookingId    = routeId,
-                driverName   = r.users?.name ?: "Driver",
-                driverEmoji  = r.users?.emoji ?: "🧑",
-                driverRating = r.users?.avgRating?.toFloat() ?: 0f,
-                vehicle      = r.vehicleId ?: "Vehicle",
-                vehicleEmoji = when {
-                    r.vehicleId?.contains("suv",   ignoreCase = true) == true -> "🚐"
-                    r.vehicleId?.contains("tempo", ignoreCase = true) == true -> "🚌"
-                    else -> "🚙"
+                driverName     = r.users?.name ?: "Driver",
+                driverEmoji    = r.users?.emoji ?: "🧑",
+                driverPhotoUrl = r.users?.avatarUrl,
+                driverRating   = r.users?.avgRating?.toFloat() ?: 0f,
+                vehicle      = r.vehicles?.model?.ifBlank { null }
+                    ?: r.vehicles?.type?.replaceFirstChar { it.uppercase() }
+                    ?: "Vehicle",
+                vehicleEmoji = when (r.vehicles?.type) {
+                    "suv", "jeep" -> "🚐"
+                    "tempo"       -> "🚌"
+                    else          -> "🚙"
                 },
                 origin       = r.origin,
                 destination  = r.destination,
@@ -205,7 +209,7 @@ fun BookingConfirmScreen(
     // In edit mode, seats must be > existing seats (adding more only)
     val minSeats         = if (isEditMode) (existingBooking?.seats ?: 1) + 1 else 1
     val isReady          = agreedToTerms && !isBookingLoading && route != null &&
-            !isDeparted &&   // block booking if trip already departed
+            !isDeparted &&
             (!isEditMode || seats >= minSeats)
     val showSuccess      = confirmResult is ActionResult.Success
 
@@ -537,7 +541,6 @@ fun BookingConfirmScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Confirm / Update button
                 // ── Departed warning — shown instead of confirm when trip is gone ─────
                 if (isDeparted) {
                     androidx.compose.foundation.layout.Box(
@@ -643,7 +646,6 @@ fun RouteHeroCard(booking: BookingSummary) {
             Text(text = "YOUR TRIP", style = EyebrowStyle.copy(fontSize = 9.sp, color = Amber))
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Origin → Destination
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -659,7 +661,6 @@ fun RouteHeroCard(booking: BookingSummary) {
                     )
                 }
 
-                // Animated connector
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier            = Modifier.weight(1f)
@@ -699,7 +700,6 @@ fun RouteHeroCard(booking: BookingSummary) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Date + time chips
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeroChip(label = "📅 ${booking.date}")
                 HeroChip(label = "🕐 ${booking.time}")
@@ -748,7 +748,16 @@ fun DriverMiniCard(booking: BookingSummary) {
                 .clip(PahadiRaahShapes.medium)
                 .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.7f))))
         ) {
-            Text(text = booking.driverEmoji, fontSize = 24.sp)
+            if (!booking.driverPhotoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model              = booking.driverPhotoUrl,
+                    contentDescription = booking.driverName,
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier.size(52.dp).clip(PahadiRaahShapes.medium)
+                )
+            } else {
+                Text(text = booking.driverEmoji, fontSize = 24.sp)
+            }
         }
 
         Column(modifier = Modifier.weight(1f)) {
@@ -822,7 +831,6 @@ fun SeatRow(
                 style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 10.sp)
             )
         }
-        // Stepper
         Row(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -965,7 +973,6 @@ fun FareBreakdownCard(
         TripDetailDivider()
         FareRow(label = "Grand Total", value = grandTotal, highlight = true)
 
-        // Savings note
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1057,7 +1064,6 @@ fun PaymentMethodSelector(
                     ),
                     modifier = Modifier.weight(1f)
                 )
-                // Radio dot
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -1178,7 +1184,6 @@ fun BookingSuccessOverlay(
             .alpha(alpha)
             .systemBarsPadding()
     ) {
-        // Background glow
         Box(
             modifier = Modifier
                 .size(340.dp)
@@ -1194,7 +1199,6 @@ fun BookingSuccessOverlay(
                 .padding(horizontal = 32.dp)
                 .scale(scale)
         ) {
-            // Check circle
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -1223,7 +1227,6 @@ fun BookingSuccessOverlay(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Booking reference card
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1276,7 +1279,6 @@ fun BookingSuccessOverlay(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Track Trip button
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -1298,7 +1300,6 @@ fun BookingSuccessOverlay(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Go home
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier

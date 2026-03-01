@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ data class MyBooking(
     val time:         String,
     val driverName:   String,
     val driverEmoji:  String,
+    val driverPhoto:  String? = null,
     val driverRating: Float,
     val routeId:      String  = "",
     val driverId:     String  = "",
@@ -90,6 +93,7 @@ private fun BookingDto.toMyBooking() = MyBooking(
     time         = routes?.time?.take(5) ?: "",
     driverName   = routes?.users?.name ?: "Driver",
     driverEmoji  = routes?.users?.emoji ?: "🧑",
+    driverPhoto  = routes?.users?.avatarUrl,
     driverRating = routes?.users?.avgRating?.toFloat() ?: 0f,
     seats        = seats,
     fare         = "₹$grandTotal",
@@ -98,7 +102,6 @@ private fun BookingDto.toMyBooking() = MyBooking(
         "ongoing"   -> MyBookingStatus.ONGOING
         "completed" -> MyBookingStatus.COMPLETED
         "cancelled" -> MyBookingStatus.CANCELLED
-        // booking-level fallbacks
         "pending"   -> MyBookingStatus.UPCOMING
         "accepted"  -> MyBookingStatus.UPCOMING
         else        -> MyBookingStatus.COMPLETED
@@ -145,7 +148,6 @@ fun MyBookingsScreen(
     val completedCount = myBookings.count { it.status == MyBookingStatus.COMPLETED }
     val cancelledCount = myBookings.count { it.status == MyBookingStatus.CANCELLED }
 
-    // ── Entrance ──────────────────────────────────────────────────────────────
     var started by remember { mutableStateOf(false) }
     val headerAlpha  by animateFloatAsState(if (started) 1f else 0f, tween(400), label = "ha")
     val headerOffset by animateFloatAsState(if (started) 0f else -20f, tween(500, easing = EaseOutCubic), label = "hY")
@@ -153,7 +155,6 @@ fun MyBookingsScreen(
     val listOffset   by animateFloatAsState(if (started) 0f else 28f, tween(600, delayMillis = 200, easing = EaseOutCubic), label = "lY")
     LaunchedEffect(Unit) { started = true }
 
-    // ═════════════════════════════════════════════════════════════════════════
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -171,7 +172,6 @@ fun MyBookingsScreen(
                 .fillMaxSize()
                 .systemBarsPadding()
         ) {
-            // ── TOP BAR ───────────────────────────────────────────────────────
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -200,7 +200,6 @@ fun MyBookingsScreen(
                     Spacer(Modifier.height(2.dp))
                     Text("Trip History", style = PahadiRaahTypography.titleLarge.copy(color = Snow))
                 }
-                // Active booking badge
                 if (ongoingCount > 0) {
                     Box(
                         modifier = Modifier
@@ -217,7 +216,6 @@ fun MyBookingsScreen(
                 }
             }
 
-            // ── STATS ROW ─────────────────────────────────────────────────────
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
@@ -232,7 +230,6 @@ fun MyBookingsScreen(
                 BookingStatChip("✗",  "$cancelledCount", "Cancelled", Sage.copy(alpha = 0.4f), Modifier.weight(1f))
             }
 
-            // ── TABS ──────────────────────────────────────────────────────────
             LazyRow(
                 contentPadding        = PaddingValues(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -262,7 +259,6 @@ fun MyBookingsScreen(
                 }
             }
 
-            // ── LIST ──────────────────────────────────────────────────────────
             if (filtered.isEmpty()) {
                 BookingEmptyState(
                     tab      = activeTab,
@@ -274,7 +270,7 @@ fun MyBookingsScreen(
                         .weight(1f)
                         .alpha(listAlpha)
                         .graphicsLayer { translationY = listOffset },
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp, ),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     itemsIndexed(filtered, key = { _, b -> b.id }) { index, booking ->
@@ -313,7 +309,6 @@ fun MyBookingCard(
     onTrack:    () -> Unit,
     onReview:   () -> Unit
 ) {
-    // Status-based border
     val borderColor = when (booking.status) {
         MyBookingStatus.UPCOMING  -> Sage.copy(alpha = 0.28f)
         MyBookingStatus.ONGOING   -> Amber.copy(alpha = 0.45f)
@@ -321,7 +316,6 @@ fun MyBookingCard(
         MyBookingStatus.CANCELLED -> BorderSubtle
     }
 
-    // Ongoing pulse on border
     val infiniteTransition = rememberInfiniteTransition(label = "mbPulse")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue  = 0.3f,
@@ -342,7 +336,6 @@ fun MyBookingCard(
             .background(SurfaceLight)
             .border(1.dp, activeBorder, PahadiRaahShapes.large)
     ) {
-        // ── Main row (always visible) ─────────────────────────────────────────
         Row(
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -355,7 +348,6 @@ fun MyBookingCard(
                 )
                 .padding(16.dp)
         ) {
-            // Route icon
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -367,7 +359,6 @@ fun MyBookingCard(
             }
 
             Column(Modifier.weight(1f)) {
-                // Route
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -390,7 +381,6 @@ fun MyBookingCard(
                     style = PahadiRaahTypography.bodySmall.copy(color = Sage, fontSize = 10.sp)
                 )
                 Spacer(Modifier.height(5.dp))
-                // Status badge
                 MyBookingStatusBadge(status = booking.status)
             }
 
@@ -411,19 +401,16 @@ fun MyBookingCard(
             }
         }
 
-        // ── Expanded details ──────────────────────────────────────────────────
         AnimatedVisibility(
             visible = isExpanded,
             enter   = fadeIn(tween(200)) + expandVertically(tween(300, easing = EaseOutCubic)),
             exit    = fadeOut(tween(150)) + shrinkVertically(tween(250))
         ) {
             Column {
-                // Divider
                 Box(Modifier.fillMaxWidth().height(1.dp).background(
                     Brush.horizontalGradient(listOf(Color.Transparent, BorderSubtle, Color.Transparent))
                 ))
 
-                // Driver + ref
                 Row(
                     verticalAlignment     = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -436,7 +423,16 @@ fun MyBookingCard(
                             .clip(CircleShape)
                             .background(Brush.verticalGradient(listOf(Forest, Moss.copy(alpha = 0.65f))))
                     ) {
-                        Text(booking.driverEmoji, fontSize = 18.sp)
+                        if (!booking.driverPhoto.isNullOrBlank()) {
+                            AsyncImage(
+                                model              = booking.driverPhoto,
+                                contentDescription = booking.driverName,
+                                contentScale       = ContentScale.Crop,
+                                modifier           = Modifier.size(40.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Text(booking.driverEmoji, fontSize = 18.sp)
+                        }
                     }
                     Column(Modifier.weight(1f)) {
                         Text(booking.driverName, style = PahadiRaahTypography.labelMedium.copy(color = Snow, letterSpacing = 0.sp))
@@ -451,7 +447,6 @@ fun MyBookingCard(
                     )
                 }
 
-                // Action buttons
                 Box(Modifier.fillMaxWidth().height(1.dp).background(
                     Brush.horizontalGradient(listOf(Color.Transparent, BorderSubtle, Color.Transparent))
                 ))

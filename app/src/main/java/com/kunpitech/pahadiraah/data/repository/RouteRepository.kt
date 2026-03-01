@@ -49,8 +49,8 @@ class RouteRepositoryImpl @Inject constructor(
     private val client: SupabaseClient
 ) : RouteRepository {
 
-    // Join driver info into each route for display
-    private val routeColumns = Columns.raw("*,users!routes_driver_id_fkey(id,name,emoji,avg_rating,is_online)")
+    // Join driver info + vehicle info into each route for display
+    private val routeColumns = Columns.raw("*, users!routes_driver_id_fkey(id, name, emoji, avg_rating, is_online, avatar_url), vehicles(id, model, type, reg_number, seat_capacity)")
 
     private val table get() = client.postgrest["routes"]
 
@@ -91,7 +91,7 @@ class RouteRepositoryImpl @Inject constructor(
         // Fetch ALL driver routes (upcoming, ongoing, completed) so the Completed tab
         // in ActiveRoutesScreen is populated. Cancelled routes are excluded.
         table
-            .select(Columns.raw("*, bookings(id, passenger_id, seats, status, users!passenger_id(name, emoji, avg_rating))")) {
+            .select(Columns.raw("*, bookings(id, passenger_id, seats, status, users!passenger_id(name, emoji, avg_rating)), vehicles(id, model, type, reg_number, seat_capacity)")) {
                 filter {
                     eq("driver_id", driverId)
                     neq("status", "cancelled")
@@ -144,6 +144,7 @@ class RouteRepositoryImpl @Inject constructor(
 
     override suspend fun cancelRoute(routeId: String): Result<Unit> =
         updateRouteStatus(routeId, "cancelled")
+
     override suspend fun suggestPlaces(query: String): Result<List<String>> = runCatching {
         if (query.length < 2) return@runCatching emptyList()
 

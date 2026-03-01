@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.kunpitech.pahadiraah.data.model.BookingDto
 import com.kunpitech.pahadiraah.data.model.UiState
 import com.kunpitech.pahadiraah.viewmodel.BookingViewModel
@@ -49,6 +51,7 @@ data class BookingRequest(
     val id: String,
     val passengerName: String,
     val passengerEmoji: String,
+    val passengerPhotoUrl: String? = null,
     val route: String,
     val seats: Int,
     val fare: String,
@@ -104,7 +107,8 @@ fun BookingRequestsScreen(
             BookingRequest(
                 id            = b.id,
                 passengerName = b.users?.name ?: "Passenger",
-                passengerEmoji= b.users?.emoji ?: "🧑",
+                passengerEmoji    = b.users?.emoji ?: "🧑",
+                passengerPhotoUrl = b.users?.avatarUrl,
                 route         = "${b.routes?.origin ?: ""} → ${b.routes?.destination ?: ""}",
                 seats         = b.seats,
                 fare          = "₹${b.grandTotal}",
@@ -539,7 +543,16 @@ fun RequestCard(
                     )
                     .border(2.dp, BorderSubtle, PahadiRaahShapes.medium)
             ) {
-                Text(text = request.passengerEmoji, fontSize = 24.sp)
+                if (!request.passengerPhotoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model              = request.passengerPhotoUrl,
+                        contentDescription = request.passengerName,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.size(52.dp).clip(PahadiRaahShapes.medium)
+                    )
+                } else {
+                    Text(text = request.passengerEmoji, fontSize = 24.sp)
+                }
             }
 
             // Name + meta

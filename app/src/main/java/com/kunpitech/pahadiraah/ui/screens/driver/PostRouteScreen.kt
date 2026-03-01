@@ -87,6 +87,7 @@ fun PostRouteScreen(
     var seats           by remember { mutableIntStateOf(2) }
     var price           by remember { mutableStateOf("") }
     var notes           by remember { mutableStateOf("") }
+    var duration        by remember { mutableStateOf("") }   // e.g. "4-5 hrs"
     var showSuccess     by remember { mutableStateOf(false) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
@@ -284,6 +285,20 @@ fun PostRouteScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // Duration
+                FormSectionLabel("TRIP DURATION")
+                Spacer(modifier = Modifier.height(12.dp))
+                PahadiTextField(
+                    value         = duration,
+                    onValueChange = { duration = it },
+                    label         = "Estimated Duration",
+                    placeholder   = "e.g. 4-5 hrs, 6 hours",
+                    leadingEmoji  = "⏱️",
+                    keyboardType  = KeyboardType.Text
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 // Vehicle type
                 FormSectionLabel("VEHICLE TYPE")
                 Spacer(modifier = Modifier.height(12.dp))
@@ -358,14 +373,16 @@ fun PostRouteScreen(
                     onClick   = {
                         errorMsg = null
 
-                        // Calculate duration from raw time for display
-                        val durationHrs = "~${
-                            when {
-                                rawTime.startsWith("0") -> "4-5"
-                                rawHour < 10 -> "5-6"
-                                else -> "6-7"
-                            }
-                        } hrs"
+                        // Use user input duration, or auto-calculate as fallback
+                        val durationHrs = duration.trim().ifBlank {
+                            "~${
+                                when {
+                                    rawTime.startsWith("0") -> "4-5"
+                                    rawHour < 10 -> "5-6"
+                                    else -> "6-7"
+                                }
+                            } hrs"
+                        }
 
                         routeViewModel.postRoute(
                             origin      = origin.trim(),

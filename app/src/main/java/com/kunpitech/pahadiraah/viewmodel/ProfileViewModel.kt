@@ -10,6 +10,7 @@ import com.kunpitech.pahadiraah.data.model.NewVehicle
 import com.kunpitech.pahadiraah.data.repository.AuthRepository
 import com.kunpitech.pahadiraah.data.repository.ProfileFieldsUpdate
 import com.kunpitech.pahadiraah.data.repository.UserRepository
+import com.kunpitech.pahadiraah.data.repository.VehicleFieldsUpdate
 import com.kunpitech.pahadiraah.data.repository.VehicleRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.jan.supabase.SupabaseClient
@@ -119,10 +120,12 @@ class ProfileViewModel @Inject constructor(
         languages:    List<String>,
         speciality:   String?,
         isDriver:     Boolean,
+        yearsActive:  Int    = 0,
         vehicleType:  String = "suv",
         vehicleModel: String = "",
         regNumber:    String = "",
-        seatCapacity: Int    = 4
+        seatCapacity: Int    = 4,
+        existingVehicleId: String? = null
     ) {
         val userId = authRepo.currentUserId() ?: run {
             _saveResult.value = ActionResult.Error("Not logged in")
@@ -149,13 +152,14 @@ class ProfileViewModel @Inject constructor(
             userRepo.updateProfile(
                 userId  = userId,
                 updates = ProfileFieldsUpdate(
-                    name       = name,
-                    emoji      = emoji,
-                    role       = if (isDriver) "driver" else "passenger",
-                    bio        = bio,
-                    languages  = languages,
-                    speciality = speciality,
-                    photoUrl   = _photoUrl.value
+                    name        = name,
+                    emoji       = emoji,
+                    role        = if (isDriver) "driver" else "passenger",
+                    bio         = bio,
+                    languages   = languages,
+                    speciality  = speciality,
+                    yearsActive = yearsActive,
+                    photoUrl    = _photoUrl.value
                 )
             ).onFailure { e ->
                 _saveResult.value = ActionResult.Error(e.message ?: "Failed to save profile")
@@ -163,19 +167,38 @@ class ProfileViewModel @Inject constructor(
             }
 
             if (isDriver && vehicleModel.isNotBlank() && regNumber.isNotBlank()) {
-                vehicleRepo.addVehicle(
-                    NewVehicle(
-                        driverId     = userId,
-                        type         = vehicleType,
-                        model        = vehicleModel,
-                        regNumber    = regNumber,
-                        seatCapacity = seatCapacity
-                    )
-                ).onFailure { e ->
-                    _saveResult.value = ActionResult.Error(
-                        "Profile saved but vehicle registration failed: ${e.message}"
-                    )
-                    return@launch
+                if (existingVehicleId != null) {
+                    // Update existing vehicle
+                    vehicleRepo.updateVehicle(
+                        vehicleId = existingVehicleId,
+                        updates   = VehicleFieldsUpdate(
+                            type         = vehicleType,
+                            model        = vehicleModel,
+                            regNumber    = regNumber,
+                            seatCapacity = seatCapacity
+                        )
+                    ).onFailure { e ->
+                        _saveResult.value = ActionResult.Error(
+                            "Profile saved but vehicle update failed: ${e.message}"
+                        )
+                        return@launch
+                    }
+                } else {
+                    // Insert new vehicle
+                    vehicleRepo.addVehicle(
+                        NewVehicle(
+                            driverId     = userId,
+                            type         = vehicleType,
+                            model        = vehicleModel,
+                            regNumber    = regNumber,
+                            seatCapacity = seatCapacity
+                        )
+                    ).onFailure { e ->
+                        _saveResult.value = ActionResult.Error(
+                            "Profile saved but vehicle registration failed: ${e.message}"
+                        )
+                        return@launch
+                    }
                 }
             }
 

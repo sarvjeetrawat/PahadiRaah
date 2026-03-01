@@ -124,7 +124,7 @@ fun ActiveRoutesScreen(
                 totalSeats  = r.seatsTotal,
                 bookedSeats = bookedSeats,
                 fare        = "₹${r.farePerSeat}",
-                vehicle     = r.vehicleId ?: "Vehicle",
+                vehicle     = r.vehicles?.model?.ifBlank { null } ?: r.vehicles?.type ?: "Vehicle",
                 status      = when (r.status) {
                     "ongoing"   -> RouteStatus.ONGOING
                     "completed" -> RouteStatus.COMPLETED
